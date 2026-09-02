@@ -1,0 +1,125 @@
+# ============================================================
+# OFFSEDU RAG - RAG Pipeline
+# ============================================================
+
+import uuid
+
+from rag.chunker import text_chunker
+from rag.embeddings import embedding_service
+from rag.vector_store import vector_store
+from rag.retriever import retriever
+from rag.context_builder import context_builder
+from ai.gemma_service import gemma_service
+
+
+class RAGPipeline:
+    """Complete Retrieval-Augmented Generation pipeline."""
+
+    def __init__(
+        self,
+        chunker=None,
+        embedding_service_instance=None,
+        vector_store_instance=None,
+        retriever_instance=None,
+        context_builder_instance=None,
+        ai_service=None,
+    ):
+        self.chunker = chunker or text_chunker
+
+        self.embedding_service = (
+            embedding_service_instance
+            or embedding_service
+        )
+
+        self.vector_store = (
+            vector_store_instance
+            or vector_store
+        )
+
+        self.retriever = (
+            retriever_instance
+            or retriever
+        )
+
+        self.context_builder = (
+            context_builder_instance
+            or context_builder
+        )
+
+        self.ai_service = ai_service or gemma_service
+
+    def index_document(self, text, metadata=None):
+        """Chunk, embed, and store a document."""
+
+        if not text or not text.strip():
+            raise ValueError("Document text cannot be empty.")
+
+        chunks = self.chunker.split_text(text)
+
+        if not chunks:
+            return []
+
+        embeddings = self.embedding_service.embed_many(
+            chunks
+        )
+
+        document_ids = [
+            str(uuid.uuid4())
+            for _ in chunks
+        ]
+
+        chunk_metadatas = []
+
+        for index, chunk in enumerate(chunks):
+            chunk_metadata = dict(metadata or {})
+
+            chunk_metadata["chunk_index"] = index
+
+            chunk_metadatas.append(
+                chunk_metadata
+            )
+
+        self.vector_store.add_documents(
+            documents=chunks,
+            embeddings=embeddings,
+            ids=document_ids,
+            metadatas=chunk_metadatas,
+        )
+
+        return document_ids
+
+    def retrieve(self, question, top_k=5):
+        """Retrieve relevant document chunks."""
+
+        return self.retriever.retrieve(
+            query=question,
+            top_k=top_k,
+        )
+
+    def answer(self, question, top_k=5):
+        """Retrieve context and generate an answer."""
+
+        if not question or not question.strip():
+            raise ValueError("Question cannot be empty.")
+
+        retrieved_chunks = self.retrieve(
+            question=question,
+            top_k=top_k,
+        )
+
+        prompt = self.context_builder.build_prompt(
+            question=question,
+            retrieved_chunks=retrieved_chunks,
+        )
+
+        answer = self.ai_service.generate(
+            prompt
+        )
+
+        return {
+            "answer": answer,
+            "sources": retrieved_chunks,
+        }
+
+
+rag_pipeline = RAGPipeline()
