@@ -7,6 +7,7 @@ from config import (
     PORT,
     DEBUG,
 )
+
 from database.database import init_db
 
 
@@ -40,6 +41,30 @@ CORS(
 # ============================================================
 
 init_db()
+
+
+# ============================================================
+# API Routes
+# ============================================================
+
+from api.chat_routes import chat_bp
+from api.document_routes import document_bp
+from api.explanation_routes import explanation_bp
+from api.quiz_routes import quiz_bp
+from api.study_plans_routes import study_plans_bp
+from api.utility_routes import utility_bp
+from api.voice_routes import voice_bp
+from api.test_paper_routes import test_paper_bp
+
+
+app.register_blueprint(chat_bp)
+app.register_blueprint(document_bp)
+app.register_blueprint(explanation_bp)
+app.register_blueprint(quiz_bp)
+app.register_blueprint(study_plans_bp)
+app.register_blueprint(utility_bp)
+app.register_blueprint(voice_bp)
+app.register_blueprint(test_paper_bp)
 
 
 # ============================================================
