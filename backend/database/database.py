@@ -6,19 +6,16 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from config import DATABASE_URL
 
 
-# ---------------------------------------------------------
-# Database configuration
-# ---------------------------------------------------------
+# =========================================================
+# SQLAlchemy Base
+# =========================================================
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-
-DATABASE_DIR = BASE_DIR / "data" / "database"
-DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+Base = declarative_base()
 
 
-# ---------------------------------------------------------
-# SQLAlchemy engine
-# ---------------------------------------------------------
+# =========================================================
+# Database Engine
+# =========================================================
 
 connect_args = {}
 
@@ -35,9 +32,9 @@ engine = create_engine(
 )
 
 
-# ---------------------------------------------------------
-# Session
-# ---------------------------------------------------------
+# =========================================================
+# Database Session
+# =========================================================
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -46,22 +43,11 @@ SessionLocal = sessionmaker(
 )
 
 
-# ---------------------------------------------------------
-# Base model
-# ---------------------------------------------------------
-
-Base = declarative_base()
-
-
-# ---------------------------------------------------------
-# Database dependency
-# ---------------------------------------------------------
+# =========================================================
+# FastAPI Database Dependency
+# =========================================================
 
 def get_db():
-    """
-    Provides a database session for FastAPI endpoints.
-    """
-
     db = SessionLocal()
 
     try:
@@ -71,18 +57,17 @@ def get_db():
         db.close()
 
 
-# ---------------------------------------------------------
-# Initialize database
-# ---------------------------------------------------------
+# =========================================================
+# Initialize Database
+# =========================================================
 
 def init_db():
-    """
-    Creates all database tables.
-    """
 
-    # Import models so SQLAlchemy knows about them.
+    # Import models so SQLAlchemy registers all tables.
     from database import models  # noqa: F401
 
     Base.metadata.create_all(
         bind=engine
     )
+
+
