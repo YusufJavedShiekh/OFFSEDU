@@ -1,19 +1,15 @@
 import { useRef, useState } from "react";
 import {
-  ArrowRight,
-  CheckCircle2,
   Download,
   FileImage,
   FileOutput,
   FileText,
   Image as ImageIcon,
-  Loader2,
   Minimize2,
-  RefreshCw,
-  Sparkles,
   Upload,
   X,
-  Zap,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 
 const tools = [
@@ -27,7 +23,7 @@ const tools = [
   {
     id: "image-pdf",
     title: "Image to PDF",
-    description: "Convert JPG, PNG or WEBP images into PDF.",
+    description: "Convert JPG, PNG or WEBP images into PDF files.",
     icon: FileOutput,
     input: "image",
   },
@@ -82,51 +78,35 @@ const acceptedTypes = {
   },
 };
 
+function getExtension(fileName) {
+  const index = fileName.lastIndexOf(".");
+
+  if (index === -1) return "";
+
+  return fileName.slice(index).toLowerCase();
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function FileTools() {
-  const inputRef = useRef(null);
-
-  const [activeTool, setActiveTool] = useState("compress");
+  const [selectedTool, setSelectedTool] = useState(null);
   const [file, setFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState("");
-
-  const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  const [quality, setQuality] = useState(70);
-
+  const [statusMessage, setStatusMessage] = useState("");
   const [resultUrl, setResultUrl] = useState("");
   const [resultName, setResultName] = useState("");
-  const [resultSize, setResultSize] = useState(null);
-  const [resultType, setResultType] = useState("");
 
-  const [statusMessage, setStatusMessage] = useState("");
-
-  const currentTool =
-    tools.find((tool) => tool.id === activeTool) || tools[0];
-
-  const accepted = acceptedTypes[currentTool.input];
-
-  const formatSize = (bytes) => {
-    if (!bytes) return "0 KB";
-
-    if (bytes < 1024) {
-      return `${bytes} B`;
-    }
-
-    if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
-
-  const getExtension = (filename) => {
-    const parts = filename.split(".");
-
-    return parts.length > 1
-      ? `.${parts.pop().toLowerCase()}`
-      : "";
-  };
+  const fileInputRef = useRef(null);
 
   const clearResult = () => {
     if (resultUrl) {
@@ -135,284 +115,166 @@ function FileTools() {
 
     setResultUrl("");
     setResultName("");
-    setResultSize(null);
-    setResultType("");
-    setStatusMessage("");
   };
 
-  const handleFile = (selectedFile) => {
-    if (!selectedFile) return;
+  const resetTool = () => {
+    clearResult();
+    setFile(null);
+    setStatusMessage("");
 
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const selectTool = (tool) => {
+    resetTool();
+    setSelectedTool(tool);
+  };
+
+  const closeTool = () => {
+    resetTool();
+    setSelectedTool(null);
+  };
+
+  const handleFileSelect = (event) => {
+    const selectedFile = event.target.files?.[0];
+
+    if (!selectedFile || !selectedTool) return;
+
+    const config = acceptedTypes[selectedTool.input];
     const extension = getExtension(selectedFile.name);
 
-    const isValid =
-      accepted.extensions.includes(extension) ||
-      accepted.mimeTypes.includes(selectedFile.type);
+    const extensionAllowed = config.extensions.includes(extension);
+    const mimeAllowed =
+      !selectedFile.type || config.mimeTypes.includes(selectedFile.type);
 
-    if (!isValid) {
+    if (!extensionAllowed || !mimeAllowed) {
       alert(
-        `Please upload a supported file.\n\nAccepted: ${accepted.label}`,
+        `Unsupported file type. Please upload: ${config.label.replaceAll(
+          " · ",
+          ", ",
+        )}.`,
       );
+
+      event.target.value = "";
       return;
     }
 
     clearResult();
-
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
-
-    const url = URL.createObjectURL(selectedFile);
-
+    setStatusMessage("");
     setFile(selectedFile);
-    setPreviewUrl(url);
-  };
-
-  const handleDrop = (event) => {
-    event.preventDefault();
-    setIsDragging(false);
-
-    const droppedFile = event.dataTransfer.files?.[0];
-
-    if (droppedFile) {
-      handleFile(droppedFile);
-    }
-  };
-
-  const openFilePicker = () => {
-    inputRef.current?.click();
-  };
-
-  const removeFile = () => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
-
-    clearResult();
-
-    setFile(null);
-    setPreviewUrl("");
-
-    if (inputRef.current) {
-      inputRef.current.value = "";
-    }
-  };
-
-  const switchTool = (toolId) => {
-    setActiveTool(toolId);
-    setIsDragging(false);
-    setIsProcessing(false);
-    clearResult();
-
-    const nextTool =
-      tools.find((tool) => tool.id === toolId);
-
-    if (
-      file &&
-      nextTool &&
-      !acceptedTypes[nextTool.input].extensions.includes(
-        getExtension(file.name),
-      ) &&
-      !acceptedTypes[nextTool.input].mimeTypes.includes(
-        file.type,
-      )
-    ) {
-      removeFile();
-    }
-  };
-
-  const createDownload = (
-    blob,
-    name,
-    type,
-  ) => {
-    if (resultUrl) {
-      URL.revokeObjectURL(resultUrl);
-    }
-
-    const url = URL.createObjectURL(blob);
-
-    setResultUrl(url);
-    setResultName(name);
-    setResultSize(blob.size);
-    setResultType(type);
-    setStatusMessage("Conversion completed successfully.");
   };
 
   const compressImage = () => {
-    if (!file || !previewUrl) {
+    if (!file) {
       alert("Please upload an image first.");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image.");
       return;
     }
 
     setIsProcessing(true);
     clearResult();
+    setStatusMessage("");
 
     const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
 
     image.onload = () => {
       const canvas = document.createElement("canvas");
 
       const maxWidth = 1800;
+      const scale = Math.min(1, maxWidth / image.width);
 
-      const scale =
-        image.width > maxWidth
-          ? maxWidth / image.width
-          : 1;
-
-      canvas.width = Math.round(
-        image.width * scale,
-      );
-
-      canvas.height = Math.round(
-        image.height * scale,
-      );
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
 
       const context = canvas.getContext("2d");
 
-      context.drawImage(
-        image,
-        0,
-        0,
-        canvas.width,
-        canvas.height,
-      );
+      if (!context) {
+        URL.revokeObjectURL(objectUrl);
+        setIsProcessing(false);
+        setStatusMessage("Unable to process this image.");
+        return;
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
       canvas.toBlob(
         (blob) => {
-          setIsProcessing(false);
+          URL.revokeObjectURL(objectUrl);
 
           if (!blob) {
-            alert("Unable to compress image.");
+            setIsProcessing(false);
+            setStatusMessage("Compression failed.");
             return;
           }
 
-          createDownload(
-            blob,
-            `compressed-${file.name.replace(
-              /\.[^/.]+$/,
-              ".jpg",
-            )}`,
-            "image/jpeg",
+          const url = URL.createObjectURL(blob);
+
+          setResultUrl(url);
+          setResultName(
+            `${file.name.replace(/\.[^/.]+$/, "")}-compressed.jpg`,
+          );
+
+          setIsProcessing(false);
+
+          setStatusMessage(
+            `Image compressed from ${formatFileSize(
+              file.size,
+            )} to ${formatFileSize(blob.size)}.`,
           );
         },
         "image/jpeg",
-        quality / 100,
+        0.78,
       );
     };
 
     image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
       setIsProcessing(false);
-      alert("Unable to read the selected image.");
+      setStatusMessage("Unable to read this image.");
     };
 
-    image.src = previewUrl;
+    image.src = objectUrl;
   };
 
-  const imageToPdf = () => {
-    if (!file || !previewUrl) {
+  const previewImage = () => {
+    if (!file) {
+      alert("Please upload an image first.");
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+
+    setResultUrl(url);
+    setResultName(file.name);
+    setStatusMessage("Image preview is ready.");
+  };
+
+  const imageToPdfPlaceholder = () => {
+    if (!file) {
       alert("Please upload an image first.");
       return;
     }
 
     setIsProcessing(true);
     clearResult();
+    setStatusMessage("");
 
-    const image = new Image();
-
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-
-      const pageWidth = 794;
-      const pageHeight = 1123;
-      const margin = 40;
-
-      const maxWidth =
-        pageWidth - margin * 2;
-
-      const maxHeight =
-        pageHeight - margin * 2;
-
-      const scale = Math.min(
-        maxWidth / image.width,
-        maxHeight / image.height,
-      );
-
-      const width = image.width * scale;
-      const height = image.height * scale;
-
-      canvas.width = pageWidth;
-      canvas.height = pageHeight;
-
-      const context = canvas.getContext("2d");
-
-      context.fillStyle = "#ffffff";
-      context.fillRect(
-        0,
-        0,
-        pageWidth,
-        pageHeight,
-      );
-
-      const x = (pageWidth - width) / 2;
-      const y = (pageHeight - height) / 2;
-
-      context.drawImage(
-        image,
-        x,
-        y,
-        width,
-        height,
-      );
-
-      /*
-       * Browser-only PDF creation.
-       * This creates a conversion-ready blob.
-       */
-      canvas.toBlob(
-        (blob) => {
-          setIsProcessing(false);
-
-          if (!blob) {
-            alert("Unable to create PDF.");
-            return;
-          }
-
-          /*
-           * The browser canvas does not natively create a
-           * real PDF MIME blob. We keep the state ready for
-           * the future PDF library/backend integration.
-           */
-          setStatusMessage(
-            "PDF conversion is ready for the PDF engine integration.",
-          );
-
-          setResultName(
-            `${file.name.replace(
-              /\.[^/.]+$/,
-              "",
-            )}.pdf`,
-          );
-
-          setResultSize(blob.size);
-          setResultType("application/pdf");
-        },
-        "image/jpeg",
-        0.95,
-      );
-    };
-
-    image.onerror = () => {
+    setTimeout(() => {
       setIsProcessing(false);
-      alert("Unable to read the selected image.");
-    };
-
-    image.src = previewUrl;
+      setStatusMessage(
+        "Image to PDF is ready for local PDF converter/backend integration.",
+      );
+    }, 900);
   };
 
-  const conversionPlaceholder = (
-    conversionName,
-  ) => {
+  const conversionPlaceholder = (conversionName) => {
     if (!file) {
       alert("Please upload a file first.");
       return;
@@ -420,6 +282,7 @@ function FileTools() {
 
     setIsProcessing(true);
     clearResult();
+    setStatusMessage("");
 
     setTimeout(() => {
       setIsProcessing(false);
@@ -431,689 +294,338 @@ function FileTools() {
   };
 
   const processTool = () => {
-    if (activeTool === "compress") {
-      compressImage();
-      return;
-    }
+    if (!selectedTool) return;
 
-    if (activeTool === "image-pdf") {
-      imageToPdf();
-      return;
-    }
-
-    if (activeTool === "pdf-image") {
-      conversionPlaceholder("PDF to Image");
-      return;
-    }
-
-    if (activeTool === "word-pdf") {
-      conversionPlaceholder("Word to PDF");
-      return;
-    }
-
-    if (activeTool === "pdf-word") {
-      conversionPlaceholder("PDF to Word");
-      return;
-    }
-  };
-
-  const getActionLabel = () => {
-    switch (activeTool) {
+    switch (selectedTool.id) {
       case "compress":
-        return "Compress Image";
+        compressImage();
+        break;
+
+      case "preview":
+        previewImage();
+        break;
+
       case "image-pdf":
-        return "Convert to PDF";
+        imageToPdfPlaceholder();
+        break;
+
       case "pdf-image":
-        return "Convert to Images";
+        conversionPlaceholder("PDF to Image");
+        break;
+
       case "word-pdf":
-        return "Convert to PDF";
+        conversionPlaceholder("Word to PDF");
+        break;
+
       case "pdf-word":
-        return "Convert to Word";
+        conversionPlaceholder("PDF to Word");
+        break;
+
       default:
-        return "Process File";
+        break;
     }
   };
 
-  const getFileIcon = () => {
-    if (!file) return FileText;
+  const downloadResult = () => {
+    if (!resultUrl) return;
 
-    if (file.type.startsWith("image/")) {
-      return ImageIcon;
-    }
+    const link = document.createElement("a");
 
-    if (file.type === "application/pdf") {
-      return FileText;
-    }
+    link.href = resultUrl;
+    link.download = resultName || "offsedu-output";
 
-    return FileText;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
-
-  const FileIcon = getFileIcon();
-
-  const compressionPercentage =
-    file && resultSize
-      ? Math.max(
-          0,
-          Math.round(
-            ((file.size - resultSize) /
-              file.size) *
-              100,
-          ),
-        )
-      : 0;
 
   return (
-    <div className="min-h-[calc(100vh-80px)] px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="relative min-h-[calc(100vh-80px)] overflow-hidden bg-gradient-to-br from-[#063b3b] via-[#06272d] to-[#03070b] px-4 py-6 sm:px-6 lg:px-8">
+      {/* Background atmosphere */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-32 -top-20 h-[420px] w-[420px] rounded-full bg-teal-500/10 blur-3xl" />
 
-        {/* HEADER */}
+        <div className="absolute right-[-120px] top-1/4 h-[480px] w-[480px] rounded-full bg-cyan-500/10 blur-3xl" />
+
+        <div className="absolute bottom-[-180px] left-1/3 h-[420px] w-[420px] rounded-full bg-teal-400/5 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto max-w-7xl">
+        {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3">
-
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05]">
-              <Zap
-                size={21}
-                className="text-white"
-              />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-teal-300/20 bg-teal-400/10 text-teal-300">
+              <FileOutput size={22} />
             </div>
 
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              <p className="text-sm font-medium text-teal-300">
+                Local File Utilities
+              </p>
+
+              <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
                 File Tools
               </h1>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Convert, compress and manage your study files locally.
-              </p>
             </div>
-
           </div>
+
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
+            Compress, preview and convert your study files with simple local
+            tools.
+          </p>
         </div>
 
-        {/* TOOL GRID */}
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {!selectedTool ? (
+          <>
+            {/* Tool grid */}
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {tools.map((tool) => {
+                const Icon = tool.icon;
 
-          {tools.map((tool) => {
-            const Icon = tool.icon;
-            const active =
-              activeTool === tool.id;
-
-            return (
-              <button
-                key={tool.id}
-                type="button"
-                onClick={() =>
-                  switchTool(tool.id)
-                }
-                className={`group rounded-2xl border p-4 text-left transition duration-200 ${
-                  active
-                    ? "border-white/20 bg-white/[0.08] ring-1 ring-white/10"
-                    : "border-white/10 bg-white/[0.025] hover:border-white/15 hover:bg-white/[0.05]"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
-                      active
-                        ? "bg-white/[0.1]"
-                        : "bg-white/[0.05] group-hover:bg-white/[0.08]"
-                    }`}
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    onClick={() => selectTool(tool)}
+                    className="group rounded-3xl border border-white/10 bg-[#061214]/65 p-6 text-left shadow-xl shadow-black/10 backdrop-blur-xl transition hover:border-teal-300/20 hover:bg-[#071719]/80"
                   >
-                    <Icon
-                      size={18}
-                      className="text-slate-300"
-                    />
-                  </div>
+                    <div className="flex items-start justify-between">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-teal-300/15 bg-teal-400/10 text-teal-300 transition group-hover:bg-teal-400/15">
+                        <Icon size={23} />
+                      </div>
 
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-semibold text-white">
+                      <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-[11px] text-slate-500">
+                        {tool.input === "image"
+                          ? "IMAGE"
+                          : tool.input === "pdf"
+                            ? "PDF"
+                            : "WORD"}
+                      </span>
+                    </div>
+
+                    <h2 className="mt-6 text-lg font-semibold text-white">
                       {tool.title}
                     </h2>
 
-                    <p className="mt-1 text-xs leading-5 text-slate-600">
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
                       {tool.description}
+                    </p>
+
+                    <div className="mt-5 flex items-center gap-2 text-sm font-medium text-teal-300">
+                      Open Tool
+                      <span className="transition-transform group-hover:translate-x-1">
+                        →
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Local info */}
+            <div className="mt-6 rounded-3xl border border-white/10 bg-[#061214]/55 p-5 backdrop-blur-xl sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+                  <CheckCircle2 size={21} />
+                </div>
+
+                <div>
+                  <h3 className="font-medium text-white">
+                    Designed for local processing
+                  </h3>
+
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    OFFSEDU is being designed around privacy-first local
+                    workflows. Advanced converters will connect to the local
+                    processing layer later.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Tool workspace */}
+            <div className="mx-auto max-w-4xl">
+              <button
+                type="button"
+                onClick={closeTool}
+                className="mb-5 inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-teal-300"
+              >
+                ← Back to File Tools
+              </button>
+
+              <div className="rounded-3xl border border-white/10 bg-[#061214]/70 p-5 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-7">
+                {/* Tool heading */}
+                <div className="mb-7 flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-teal-300/15 bg-teal-400/10 text-teal-300">
+                    <selectedTool.icon size={23} />
+                  </div>
+
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-semibold text-white">
+                      {selectedTool.title}
+                    </h2>
+
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      {selectedTool.description}
                     </p>
                   </div>
 
-                </div>
-              </button>
-            );
-          })}
-
-        </div>
-
-        {/* MAIN */}
-        <div className="grid gap-6 lg:grid-cols-[390px_1fr]">
-
-          {/* LEFT PANEL */}
-          <div className="space-y-5">
-
-            {/* UPLOAD */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-
-              <div className="mb-4 flex items-center justify-between">
-
-                <div>
-                  <h2 className="text-sm font-semibold text-white">
-                    Upload File
-                  </h2>
-
-                  <p className="mt-1 text-xs text-slate-600">
-                    {currentTool.title}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={closeTool}
+                    className="ml-auto rounded-xl p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                  >
+                    <X size={19} />
+                  </button>
                 </div>
 
-                <FileIcon
-                  size={18}
-                  className="text-slate-500"
-                />
-
-              </div>
-
-              {!file ? (
-                <label
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={() =>
-                    setIsDragging(false)
-                  }
-                  onDrop={handleDrop}
-                  className={`flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-5 text-center transition ${
-                    isDragging
-                      ? "border-white/30 bg-white/[0.08]"
-                      : "border-white/10 bg-white/[0.015] hover:border-white/20 hover:bg-white/[0.04]"
-                  }`}
+                {/* Upload area */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full rounded-3xl border border-dashed border-teal-300/20 bg-teal-400/[0.035] p-8 text-center transition hover:border-teal-300/35 hover:bg-teal-400/[0.06] sm:p-12"
                 >
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept={accepted.extensions.join(
-                      ",",
-                    )}
-                    className="hidden"
-                    onChange={(event) =>
-                      handleFile(
-                        event.target.files?.[0],
-                      )
-                    }
-                  />
-
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.06]">
-                    <Upload
-                      size={21}
-                      className="text-slate-400"
-                    />
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-teal-300/15 bg-teal-400/10 text-teal-300">
+                    <Upload size={27} />
                   </div>
 
-                  <p className="text-sm font-medium text-slate-300">
-                    Drop your file here
+                  <h3 className="mt-5 text-base font-semibold text-white">
+                    {file ? "Choose another file" : "Upload your file"}
+                  </h3>
+
+                  <p className="mt-2 text-sm text-slate-500">
+                    {acceptedTypes[selectedTool.input].label}
                   </p>
 
-                  <p className="mt-1 text-xs text-slate-600">
-                    or click to browse
-                  </p>
-
-                  <p className="mt-4 text-[10px] uppercase tracking-wider text-slate-700">
-                    {accepted.label}
-                  </p>
-                </label>
-              ) : (
-                <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-
-                  <div className="flex items-center gap-3">
-
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/[0.07]">
-
-                      {file.type.startsWith(
-                        "image/",
-                      ) ? (
-                        <img
-                          src={previewUrl}
-                          alt={file.name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <FileIcon
-                          size={19}
-                          className="text-slate-300"
-                        />
-                      )}
-
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-white">
+                  {file && (
+                    <div className="mx-auto mt-5 max-w-lg rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                      <p className="truncate text-sm font-medium text-teal-300">
                         {file.name}
                       </p>
 
                       <p className="mt-1 text-xs text-slate-600">
-                        {formatSize(file.size)}
+                        {formatFileSize(file.size)}
                       </p>
                     </div>
+                  )}
+                </button>
 
-                    <button
-                      type="button"
-                      onClick={removeFile}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.08] hover:text-white"
-                      title="Remove file"
-                    >
-                      <X size={16} />
-                    </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={acceptedTypes[selectedTool.input].extensions.join(",")}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
 
-                  </div>
-
-                </div>
-              )}
-
-            </div>
-
-            {/* TOOL SETTINGS */}
-            {activeTool === "compress" && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-
-                <h2 className="text-sm font-semibold text-white">
-                  Compression Settings
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-600">
-                  Choose the output image quality.
-                </p>
-
-                <div className="mt-5">
-
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">
-                      Quality
-                    </span>
-
-                    <span className="text-xs font-medium text-white">
-                      {quality}%
-                    </span>
-                  </div>
-
-                  <input
-                    type="range"
-                    min="20"
-                    max="100"
-                    value={quality}
-                    onChange={(event) =>
-                      setQuality(
-                        Number(
-                          event.target.value,
-                        ),
-                      )
-                    }
-                    className="w-full accent-white"
-                  />
-
-                  <div className="mt-2 flex justify-between text-[10px] text-slate-700">
-                    <span>Smaller</span>
-                    <span>Higher quality</span>
-                  </div>
-
-                </div>
-
-              </div>
-            )}
-
-            {/* CONVERSION INFO */}
-            {activeTool !== "compress" &&
-              activeTool !== "preview" && (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-
-                  <div className="flex items-start gap-3">
-
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.05]">
-                      <Sparkles
-                        size={16}
-                        className="text-slate-500"
-                      />
-                    </div>
-
-                    <div>
-                      <h3 className="text-xs font-semibold text-slate-400">
-                        Local conversion ready
-                      </h3>
-
-                      <p className="mt-1 text-xs leading-5 text-slate-700">
-                        The interface is prepared for a local
-                        converter or backend service. No files are
-                        uploaded to an external service.
-                      </p>
-                    </div>
-
-                  </div>
-
-                </div>
-              )}
-
-            {/* ACTION */}
-            {activeTool !== "preview" && (
-              <button
-                type="button"
-                onClick={processTool}
-                disabled={isProcessing || !file}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2
-                      size={17}
-                      className="animate-spin"
-                    />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Zap size={17} />
-                    {getActionLabel()}
-                  </>
-                )}
-              </button>
-            )}
-
-          </div>
-
-          {/* RIGHT PANEL */}
-          <div className="min-h-[620px] rounded-2xl border border-white/10 bg-white/[0.025]">
-
-            {/* PANEL HEADER */}
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 sm:px-6">
-
-              <div className="flex items-center gap-3">
-
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.06]">
-                  <ImageIcon
-                    size={17}
-                    className="text-slate-300"
-                  />
-                </div>
-
-                <div>
-                  <h2 className="text-sm font-semibold text-white">
-                    {currentTool.title}
-                  </h2>
-
-                  <p className="text-xs text-slate-600">
-                    {file
-                      ? file.name
-                      : "No file selected"}
-                  </p>
-                </div>
-
-              </div>
-
-              {file && (
+                {/* Action */}
                 <button
                   type="button"
-                  onClick={removeFile}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-slate-500 transition hover:bg-white/[0.07] hover:text-white"
-                  title="Clear"
+                  onClick={processTool}
+                  disabled={!file || isProcessing}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-500/90 px-5 py-3.5 text-sm font-semibold text-slate-950 transition hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <X size={15} />
+                  {isProcessing ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <selectedTool.icon size={18} />
+                      {selectedTool.id === "preview"
+                        ? "Preview Image"
+                        : `Process ${selectedTool.title}`}
+                    </>
+                  )}
                 </button>
-              )}
 
-            </div>
+                {/* Status */}
+                {statusMessage && (
+                  <div className="mt-5 flex items-start gap-3 rounded-2xl border border-teal-300/10 bg-teal-400/[0.04] p-4">
+                    <CheckCircle2
+                      size={19}
+                      className="mt-0.5 shrink-0 text-teal-300"
+                    />
 
-            <div className="p-5 sm:p-7">
-
-              {!file ? (
-                <div className="flex min-h-[510px] flex-col items-center justify-center text-center">
-
-                  <div className="relative mb-5">
-
-                    <div className="absolute inset-0 rounded-2xl bg-white/[0.05] blur-xl" />
-
-                    <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
-                      <FileOutput
-                        size={27}
-                        className="text-slate-500"
-                      />
-                    </div>
-
+                    <p className="text-sm leading-6 text-slate-400">
+                      {statusMessage}
+                    </p>
                   </div>
+                )}
 
-                  <h3 className="text-base font-semibold text-slate-300">
-                    Ready for your file
-                  </h3>
+                {/* Result */}
+                {resultUrl && (
+                  <div className="mt-6 rounded-3xl border border-white/10 bg-black/15 p-4 sm:p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-medium text-white">
+                          Output
+                        </h3>
 
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-                    Upload a supported file from the left panel
-                    to start using {currentTool.title}.
-                  </p>
-
-                  <div className="mt-6 flex flex-wrap justify-center gap-2">
-
-                    <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-slate-600">
-                      {accepted.label}
-                    </span>
-
-                    <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-slate-600">
-                      Local-first
-                    </span>
-
-                  </div>
-
-                </div>
-              ) : (
-                <div>
-
-                  {/* IMAGE PREVIEW */}
-                  {file.type.startsWith(
-                    "image/",
-                  ) && (
-                    <div className="flex min-h-[430px] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/20 p-4">
-
-                      <img
-                        src={previewUrl}
-                        alt="File preview"
-                        className="max-h-[430px] max-w-full rounded-xl object-contain"
-                      />
-
-                    </div>
-                  )}
-
-                  {/* PDF PREVIEW */}
-                  {file.type ===
-                    "application/pdf" && (
-                    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white">
-
-                      <iframe
-                        src={previewUrl}
-                        title="PDF Preview"
-                        className="h-[520px] w-full"
-                      />
-
-                    </div>
-                  )}
-
-                  {/* WORD PREVIEW */}
-                  {file.name
-                    .toLowerCase()
-                    .endsWith(".docx") && (
-                    <div className="flex min-h-[430px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-center">
-
-                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.05]">
-                        <FileText
-                          size={28}
-                          className="text-slate-400"
-                        />
+                        <p className="mt-1 truncate text-xs text-slate-600">
+                          {resultName}
+                        </p>
                       </div>
 
-                      <h3 className="text-sm font-semibold text-white">
-                        Word document selected
-                      </h3>
-
-                      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-600">
-                        Preview will be available when the
-                        document processing engine is connected.
-                      </p>
-
+                      <button
+                        type="button"
+                        onClick={downloadResult}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-teal-400"
+                      >
+                        <Download size={17} />
+                        Download
+                      </button>
                     </div>
-                  )}
 
-                  {/* STATUS */}
-                  {statusMessage && (
-                    <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-
-                      <div className="flex items-start gap-3">
-
-                        <CheckCircle2
-                          size={17}
-                          className="mt-0.5 shrink-0 text-slate-400"
+                    {selectedTool.id === "preview" ||
+                    selectedTool.id === "compress" ? (
+                      <div className="flex min-h-[300px] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-4">
+                        <img
+                          src={resultUrl}
+                          alt="Processed result"
+                          className="max-h-[520px] max-w-full rounded-xl object-contain"
                         />
-
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02] text-center">
                         <div>
-                          <p className="text-xs font-medium text-slate-300">
-                            Processing status
-                          </p>
+                          <FileOutput
+                            size={36}
+                            className="mx-auto text-teal-300"
+                          />
 
-                          <p className="mt-1 text-xs leading-5 text-slate-600">
-                            {statusMessage}
+                          <p className="mt-3 text-sm text-slate-500">
+                            Output will appear here after local converter
+                            integration.
                           </p>
                         </div>
-
                       </div>
-
-                    </div>
-                  )}
-
-                  {/* RESULT */}
-                  {resultName && (
-                    <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-                        <div className="min-w-0">
-
-                          <p className="text-xs font-medium text-white">
-                            Output ready
-                          </p>
-
-                          <p className="mt-1 truncate text-xs text-slate-600">
-                            {resultName}
-                          </p>
-
-                          <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-slate-700">
-
-                            {resultSize && (
-                              <span>
-                                {formatSize(
-                                  resultSize,
-                                )}
-                              </span>
-                            )}
-
-                            {activeTool ===
-                              "compress" &&
-                              resultSize && (
-                                <span className="text-slate-400">
-                                  {compressionPercentage}%
-                                  smaller
-                                </span>
-                              )}
-
-                          </div>
-
-                        </div>
-
-                        {resultUrl ? (
-                          <a
-                            href={resultUrl}
-                            download={resultName}
-                            className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-slate-200"
-                          >
-                            <Download size={15} />
-                            Download
-                          </a>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled
-                            className="flex shrink-0 items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-xs text-slate-700"
-                          >
-                            <Download size={15} />
-                            Converter Required
-                          </button>
-                        )}
-
-                      </div>
-
-                    </div>
-                  )}
-
-                  {/* FILE INFO */}
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-700">
-                        File
-                      </p>
-
-                      <p className="mt-1 truncate text-xs text-slate-400">
-                        {file.name}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-700">
-                        Size
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-400">
-                        {formatSize(file.size)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-700">
-                        Format
-                      </p>
-
-                      <p className="mt-1 text-xs uppercase text-slate-400">
-                        {getExtension(
-                          file.name,
-                        ).replace(".", "")}
-                      </p>
-                    </div>
-
+                    )}
                   </div>
+                )}
+              </div>
 
+              {/* Tool note */}
+              <div className="mt-5 rounded-2xl border border-white/10 bg-[#061214]/50 p-4 backdrop-blur-xl">
+                <div className="flex gap-3">
+                  <FileText
+                    size={18}
+                    className="mt-0.5 shrink-0 text-slate-500"
+                  />
+
+                  <p className="text-xs leading-5 text-slate-600">
+                    Some conversion tools currently use a frontend placeholder.
+                    They are intentionally ready for connection with the local
+                    OFFSEDU processing layer later.
+                  </p>
                 </div>
-              )}
-
+              </div>
             </div>
-          </div>
-        </div>
-
-        {/* NOTICE */}
-        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-
-          <Sparkles
-            size={16}
-            className="mt-0.5 shrink-0 text-slate-600"
-          />
-
-          <div>
-            <p className="text-xs font-medium text-slate-500">
-              OFFSEDU • Local First
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-700">
-              File selection and image compression are handled in
-              the browser. PDF and Word conversions are structured
-              for the upcoming local converter/backend integration.
-              Your files are not sent to an external service by this
-              page.
-            </p>
-          </div>
-
-        </div>
-
+          </>
+        )}
       </div>
     </div>
   );

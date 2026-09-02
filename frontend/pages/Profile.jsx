@@ -1,146 +1,182 @@
 import { useState } from "react";
 import {
-  User,
-  Mail,
-  CalendarDays,
-  Clock3,
-  Trophy,
-  BookOpen,
-  Target,
   Award,
-  Pencil,
-  X,
-  Check,
-  ShieldCheck,
-  Brain,
+  BookOpen,
+  CheckCircle2,
+  Clock3,
+  Edit3,
+  Flame,
   GraduationCap,
+  Mail,
+  Save,
+  ShieldCheck,
+  Target,
+  Trophy,
+  User,
+  X,
 } from "lucide-react";
 
+const initialProfile = {
+  name: "OFFSEDU Student",
+  email: "student@example.com",
+  bio: "Learning with AI, one topic at a time.",
+};
+
+const recentActivity = [
+  {
+    title: "Completed DBMS Quiz",
+    detail: "Scored 90% in Database Management System",
+    time: "Today",
+    icon: Trophy,
+  },
+  {
+    title: "Studied for 2 hours",
+    detail: "Focused on Transactions and Normalization",
+    time: "Yesterday",
+    icon: Clock3,
+  },
+  {
+    title: "Created a Study Plan",
+    detail: "Weekly preparation plan created",
+    time: "2 days ago",
+    icon: Target,
+  },
+  {
+    title: "Added study material",
+    detail: "Database Management System notes",
+    time: "3 days ago",
+    icon: BookOpen,
+  },
+];
+
+const achievements = [
+  {
+    title: "First Quiz",
+    description: "Completed your first quiz",
+    icon: GraduationCap,
+  },
+  {
+    title: "Consistent Learner",
+    description: "Maintained a regular study routine",
+    icon: Flame,
+  },
+  {
+    title: "Quiz Master",
+    description: "Completed multiple practice quizzes",
+    icon: Trophy,
+  },
+  {
+    title: "Study Organizer",
+    description: "Created your first study plan",
+    icon: Target,
+  },
+];
+
 function Profile() {
+  const [profile, setProfile] = useState(initialProfile);
+  const [editForm, setEditForm] = useState(initialProfile);
   const [editOpen, setEditOpen] = useState(false);
 
-  const [profile, setProfile] = useState({
-    name: "OFFSEDU Student",
-    email: "student@example.com",
-    bio: "Learning smarter with AI-powered study tools.",
-  });
-
-  const [editProfile, setEditProfile] = useState(profile);
-
   const openEdit = () => {
-    setEditProfile(profile);
+    setEditForm(profile);
     setEditOpen(true);
   };
 
-  const saveProfile = () => {
-    setProfile(editProfile);
+  const closeEdit = () => {
     setEditOpen(false);
   };
 
-  const stats = [
-    {
-      label: "Study Time",
-      value: "24h",
-      icon: Clock3,
-      description: "This month",
-    },
-    {
-      label: "Quizzes",
-      value: "18",
-      icon: Target,
-      description: "Completed",
-    },
-    {
-      label: "Subjects",
-      value: "7",
-      icon: BookOpen,
-      description: "Learning",
-    },
-    {
-      label: "Avg. Score",
-      value: "86%",
-      icon: Trophy,
-      description: "Overall",
-    },
-  ];
+  const saveProfile = () => {
+    const name = editForm.name.trim();
+    const email = editForm.email.trim();
+    const bio = editForm.bio.trim();
 
-  const recentActivity = [
-    {
-      icon: Brain,
-      title: "Completed a Quiz",
-      description: "Database Management System",
-      time: "2 hours ago",
-    },
-    {
-      icon: BookOpen,
-      title: "Studied a Document",
-      description: "Computer Networks Notes",
-      time: "Yesterday",
-    },
-    {
-      icon: GraduationCap,
-      title: "Created Study Plan",
-      description: "DBMS Examination Preparation",
-      time: "2 days ago",
-    },
-  ];
+    if (!name || !email) {
+      alert("Name and email are required.");
+      return;
+    }
 
-  const achievements = [
-    {
-      icon: Award,
-      title: "Quiz Starter",
-      description: "Completed your first quiz",
-    },
-    {
-      icon: Target,
-      title: "Focused Learner",
-      description: "Completed 10 quizzes",
-    },
-    {
-      icon: BookOpen,
-      title: "Knowledge Builder",
-      description: "Studied 5 subjects",
-    },
-  ];
+    setProfile({
+      name,
+      email,
+      bio,
+    });
+
+    setEditOpen(false);
+  };
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <div className="relative min-h-[calc(100vh-80px)] overflow-hidden bg-gradient-to-br from-[#063b3b] via-[#06272d] to-[#03070b] px-4 py-6 sm:px-6 lg:px-8">
+      {/* Background atmosphere */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-32 -top-20 h-[420px] w-[420px] rounded-full bg-teal-500/10 blur-3xl" />
+
+        <div className="absolute right-[-120px] top-1/4 h-[480px] w-[480px] rounded-full bg-cyan-500/10 blur-3xl" />
+
+        <div className="absolute bottom-[-180px] left-1/3 h-[420px] w-[420px] rounded-full bg-teal-400/5 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto max-w-7xl">
         {/* Header */}
-        <div>
-          <p className="text-sm font-medium text-slate-400">Account</p>
+        <div className="mb-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-teal-300/20 bg-teal-400/10 text-teal-300">
+              <User size={22} />
+            </div>
 
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Profile
-          </h1>
+            <div>
+              <p className="text-sm font-medium text-teal-300">
+                Account
+              </p>
 
-          <p className="mt-2 text-sm text-slate-400">
-            Manage your profile and track your learning progress.
+              <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                Profile
+              </h1>
+            </div>
+          </div>
+
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
+            Manage your learning profile and keep track of your progress in
+            OFFSEDU.
           </p>
         </div>
 
         {/* Profile Hero */}
-        <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-          <div className="border-b border-white/10 p-6 sm:p-8">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-5">
+        <section className="mb-6 overflow-hidden rounded-3xl border border-white/10 bg-[#061214]/70 shadow-2xl shadow-black/20 backdrop-blur-xl">
+          <div className="relative p-5 sm:p-7">
+            <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-teal-400/5 blur-3xl" />
+
+            <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 {/* Avatar */}
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] ring-1 ring-white/10">
-                  <User className="h-9 w-9 text-slate-200" />
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl border border-teal-300/20 bg-teal-400/10 text-2xl font-semibold text-teal-300">
+                  {profile.name
+                    .split(" ")
+                    .map((word) => word[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()}
                 </div>
 
-                <div className="min-w-0">
-                  <h2 className="truncate text-xl font-semibold text-white sm:text-2xl">
-                    {profile.name}
-                  </h2>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-semibold text-white">
+                      {profile.name}
+                    </h2>
 
-                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-400">
-                    <Mail className="h-4 w-4" />
-                    <span className="truncate">{profile.email}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-teal-300/15 bg-teal-400/10 px-2.5 py-1 text-[11px] font-medium text-teal-300">
+                      <CheckCircle2 size={12} />
+                      Student
+                    </span>
                   </div>
 
-                  <p className="mt-2 text-sm text-slate-400">
-                    {profile.bio}
+                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+                    <Mail size={15} />
+                    <span className="break-all">{profile.email}</span>
+                  </div>
+
+                  <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
+                    {profile.bio || "No bio added yet."}
                   </p>
                 </div>
               </div>
@@ -148,132 +184,92 @@ function Profile() {
               <button
                 type="button"
                 onClick={openEdit}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/[0.09] hover:text-white"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-medium text-slate-300 transition hover:border-teal-300/15 hover:bg-teal-400/[0.06] hover:text-white"
               >
-                <Pencil className="h-4 w-4" />
+                <Edit3 size={17} />
                 Edit Profile
               </button>
-            </div>
-          </div>
-
-          {/* Account Status */}
-          <div className="grid gap-4 p-6 sm:grid-cols-2 sm:p-8">
-            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06]">
-                  <ShieldCheck className="h-5 w-5 text-slate-200" />
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-white">
-                    Local & Private
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Your study data stays on your device.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06]">
-                  <CalendarDays className="h-5 w-5 text-slate-200" />
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-white">
-                    Member Since
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    September 2026
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
         {/* Stats */}
-        <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-white">
-              Learning Overview
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Your study activity at a glance.
-            </p>
-          </div>
+        <section className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard
+            icon={Clock3}
+            label="Study Time"
+            value="24h"
+            description="Total learning time"
+          />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {stats.map((stat) => {
-              const Icon = stat.icon;
+          <StatCard
+            icon={BookOpen}
+            label="Quizzes"
+            value="18"
+            description="Completed quizzes"
+          />
 
-              return (
-                <div
-                  key={stat.label}
-                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:bg-white/[0.05]"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
-                      <Icon className="h-5 w-5 text-slate-300" />
-                    </div>
+          <StatCard
+            icon={GraduationCap}
+            label="Subjects"
+            value="7"
+            description="Active subjects"
+          />
 
-                    <span className="text-xs text-slate-500">
-                      {stat.description}
-                    </span>
-                  </div>
-
-                  <p className="mt-5 text-2xl font-semibold text-white">
-                    {stat.value}
-                  </p>
-
-                  <p className="mt-1 text-sm text-slate-400">
-                    {stat.label}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+          <StatCard
+            icon={Trophy}
+            label="Avg. Score"
+            value="86%"
+            description="Quiz performance"
+          />
         </section>
 
-        {/* Recent Activity + Learning Profile */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        {/* Main Grid */}
+        <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
           {/* Recent Activity */}
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03]">
-            <div className="border-b border-white/10 p-5 sm:p-6">
-              <h2 className="font-semibold text-white">Recent Activity</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Your latest learning activities.
-              </p>
+          <section className="rounded-3xl border border-white/10 bg-[#061214]/65 p-5 backdrop-blur-xl sm:p-6">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-white">
+                  Recent Activity
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Your latest learning activities.
+                </p>
+              </div>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+                <Clock3 size={18} />
+              </div>
             </div>
 
-            <div className="divide-y divide-white/10">
+            <div className="space-y-3">
               {recentActivity.map((activity) => {
                 const Icon = activity.icon;
 
                 return (
                   <div
                     key={activity.title}
-                    className="flex gap-4 p-5 sm:p-6"
+                    className="flex gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 transition hover:border-teal-300/10 hover:bg-white/[0.04]"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06]">
-                      <Icon className="h-5 w-5 text-slate-300" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+                      <Icon size={18} />
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-col justify-between gap-1 sm:flex-row">
-                        <p className="text-sm font-medium text-white">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <h3 className="text-sm font-medium text-slate-200">
                           {activity.title}
-                        </p>
+                        </h3>
 
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs text-slate-600">
                           {activity.time}
                         </span>
                       </div>
 
-                      <p className="mt-1 text-sm text-slate-400">
-                        {activity.description}
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {activity.detail}
                       </p>
                     </div>
                   </div>
@@ -283,219 +279,213 @@ function Profile() {
           </section>
 
           {/* Learning Profile */}
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03]">
-            <div className="border-b border-white/10 p-5 sm:p-6">
-              <h2 className="font-semibold text-white">
-                Learning Profile
-              </h2>
+          <section className="rounded-3xl border border-white/10 bg-[#061214]/65 p-5 backdrop-blur-xl sm:p-6">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-white">
+                  Learning Profile
+                </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Your current study preferences.
-              </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Your current study preferences.
+                </p>
+              </div>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+                <Target size={18} />
+              </div>
             </div>
 
-            <div className="space-y-5 p-5 sm:p-6">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-400">
-                    Preferred Language
-                  </span>
+            <div className="space-y-3">
+              <PreferenceRow
+                label="Preferred Difficulty"
+                value="Medium"
+              />
 
-                  <span className="text-sm font-medium text-white">
-                    English
-                  </span>
-                </div>
-              </div>
+              <PreferenceRow
+                label="Study Language"
+                value="English"
+              />
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-400">
-                    Explanation Level
-                  </span>
+              <PreferenceRow
+                label="Daily Study Goal"
+                value="2 Hours"
+              />
 
-                  <span className="text-sm font-medium text-white">
-                    Detailed
-                  </span>
-                </div>
-              </div>
+              <PreferenceRow
+                label="Response Style"
+                value="Balanced"
+              />
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-400">
-                    Difficulty
-                  </span>
-
-                  <span className="text-sm font-medium text-white">
-                    Medium
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-400">
-                    Daily Study Goal
-                  </span>
-
-                  <span className="text-sm font-medium text-white">
-                    2 Hours
-                  </span>
-                </div>
-              </div>
+              <PreferenceRow
+                label="Quiz Questions"
+                value="10"
+              />
             </div>
           </section>
         </div>
 
         {/* Achievements */}
-        <section className="rounded-2xl border border-white/10 bg-white/[0.03]">
-          <div className="border-b border-white/10 p-5 sm:p-6">
-            <h2 className="font-semibold text-white">Achievements</h2>
+        <section className="mt-6 rounded-3xl border border-white/10 bg-[#061214]/65 p-5 backdrop-blur-xl sm:p-6">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-white">
+                Achievements
+              </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Milestones from your learning journey.
-            </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Milestones from your learning journey.
+              </p>
+            </div>
+
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+              <Award size={18} />
+            </div>
           </div>
 
-          <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {achievements.map((achievement) => {
               const Icon = achievement.icon;
 
               return (
                 <div
                   key={achievement.title}
-                  className="rounded-xl border border-white/10 bg-black/20 p-4"
+                  className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 transition hover:border-teal-300/10 hover:bg-white/[0.04]"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.06]">
-                      <Icon className="h-5 w-5 text-slate-200" />
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {achievement.title}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        {achievement.description}
-                      </p>
-                    </div>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-teal-300/10 bg-teal-400/10 text-teal-300">
+                    <Icon size={20} />
                   </div>
+
+                  <h3 className="mt-4 text-sm font-semibold text-white">
+                    {achievement.title}
+                  </h3>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {achievement.description}
+                  </p>
                 </div>
               );
             })}
           </div>
         </section>
 
+        {/* Privacy */}
+        <section className="mt-6 rounded-3xl border border-teal-300/10 bg-teal-400/[0.035] p-5 backdrop-blur-xl sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+              <ShieldCheck size={21} />
+            </div>
+
+            <div>
+              <h3 className="font-medium text-white">
+                Local & Private
+              </h3>
+
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Your OFFSEDU profile is designed around local-first
+                functionality. Cloud account features can be connected later.
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* Footer */}
-        <div className="pb-6 text-center text-xs text-slate-600">
-          OFFSEDU • Offline AI Study Assistant
+        <div className="py-8 text-center">
+          <p className="text-xs text-slate-600">
+            OFFSEDU · AI-powered local learning environment
+          </p>
         </div>
       </div>
 
       {/* Edit Profile Modal */}
       {editOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f17] shadow-2xl">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#071214] p-6 shadow-2xl sm:p-7">
+            <div className="mb-6 flex items-start justify-between">
               <div>
-                <h2 className="font-semibold text-white">
+                <h2 className="text-lg font-semibold text-white">
                   Edit Profile
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  Update your profile information.
+                  Update your local profile information.
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setEditOpen(false)}
-                className="rounded-lg p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
-                aria-label="Close"
+                onClick={closeEdit}
+                className="rounded-xl p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
               >
-                <X className="h-5 w-5" />
+                <X size={19} />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="space-y-5 p-5">
+            <div className="space-y-5">
+              {/* Name */}
               <div>
-                <label
-                  htmlFor="profile-name"
-                  className="mb-2 block text-sm font-medium text-slate-300"
-                >
-                  Name
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Full Name
                 </label>
 
                 <input
-                  id="profile-name"
                   type="text"
-                  value={editProfile.name}
+                  value={editForm.name}
                   onChange={(event) =>
-                    setEditProfile({
-                      ...editProfile,
+                    setEditForm((current) => ({
+                      ...current,
                       name: event.target.value,
-                    })
+                    }))
                   }
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-white/20 focus:bg-white/[0.06]"
-                  placeholder="Enter your name"
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-teal-400/30"
                 />
               </div>
 
+              {/* Email */}
               <div>
-                <label
-                  htmlFor="profile-email"
-                  className="mb-2 block text-sm font-medium text-slate-300"
-                >
+                <label className="mb-2 block text-sm font-medium text-slate-300">
                   Email
                 </label>
 
                 <input
-                  id="profile-email"
                   type="email"
-                  value={editProfile.email}
+                  value={editForm.email}
                   onChange={(event) =>
-                    setEditProfile({
-                      ...editProfile,
+                    setEditForm((current) => ({
+                      ...current,
                       email: event.target.value,
-                    })
+                    }))
                   }
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-white/20 focus:bg-white/[0.06]"
-                  placeholder="Enter your email"
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-teal-400/30"
                 />
               </div>
 
+              {/* Bio */}
               <div>
-                <label
-                  htmlFor="profile-bio"
-                  className="mb-2 block text-sm font-medium text-slate-300"
-                >
+                <label className="mb-2 block text-sm font-medium text-slate-300">
                   Bio
                 </label>
 
                 <textarea
-                  id="profile-bio"
-                  rows={3}
-                  value={editProfile.bio}
+                  rows={4}
+                  value={editForm.bio}
                   onChange={(event) =>
-                    setEditProfile({
-                      ...editProfile,
+                    setEditForm((current) => ({
+                      ...current,
                       bio: event.target.value,
-                    })
+                    }))
                   }
-                  className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-white/20 focus:bg-white/[0.06]"
-                  placeholder="Tell us about yourself"
+                  placeholder="Tell us a little about yourself..."
+                  className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-slate-600 focus:border-teal-400/30"
                 />
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="flex justify-end gap-3 border-t border-white/10 px-5 py-4">
+            <div className="mt-6 flex gap-3">
               <button
                 type="button"
-                onClick={() => setEditOpen(false)}
-                className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-white/[0.05] hover:text-white"
+                onClick={closeEdit}
+                className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-slate-400 transition hover:bg-white/[0.07] hover:text-white"
               >
                 Cancel
               </button>
@@ -503,15 +493,51 @@ function Profile() {
               <button
                 type="button"
                 onClick={saveProfile}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-200"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-teal-400"
               >
-                <Check className="h-4 w-4" />
+                <Save size={17} />
                 Save Changes
               </button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, description }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#061214]/65 p-4 backdrop-blur-xl sm:p-5">
+      <div className="flex items-start justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-400/10 text-teal-300">
+          <Icon size={19} />
+        </div>
+
+        <span className="text-xl font-semibold text-white">
+          {value}
+        </span>
+      </div>
+
+      <p className="mt-4 text-sm font-medium text-slate-300">
+        {label}
+      </p>
+
+      <p className="mt-1 text-xs text-slate-600">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function PreferenceRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-white/[0.025] px-4 py-3">
+      <span className="text-xs text-slate-500">{label}</span>
+
+      <span className="text-xs font-medium text-slate-300">
+        {value}
+      </span>
     </div>
   );
 }

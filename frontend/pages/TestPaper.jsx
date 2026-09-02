@@ -16,7 +16,10 @@ const questionTypes = [
   "Mixed",
 ];
 
-const marksOptions = Array.from({ length: 20 }, (_, index) => index + 1);
+const marksOptions = Array.from(
+  { length: 20 },
+  (_, index) => index + 1,
+);
 
 const questionCounts = [5, 10, 20, 30];
 
@@ -79,7 +82,8 @@ const sampleLongQuestions = [
 function TestPaper() {
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
-  const [questionType, setQuestionType] = useState("Short Answer");
+  const [questionType, setQuestionType] =
+    useState("Short Answer");
   const [marks, setMarks] = useState("5");
   const [questionCount, setQuestionCount] = useState(5);
 
@@ -89,7 +93,9 @@ function TestPaper() {
   const [generated, setGenerated] = useState(false);
 
   const handleFile = (selectedFile) => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      return;
+    }
 
     const allowedExtensions = [
       ".pdf",
@@ -106,14 +112,20 @@ function TestPaper() {
       .toLowerCase()}`;
 
     if (!allowedExtensions.includes(extension)) {
-      alert("Please upload PDF, DOCX, TXT, JPG, JPEG or PNG.");
+      alert(
+        "Please upload PDF, DOCX, TXT, JPG, JPEG or PNG.",
+      );
       return;
     }
 
     setFile(selectedFile);
 
     if (!subject.trim()) {
-      const fileName = selectedFile.name.replace(/\.[^/.]+$/, "");
+      const fileName = selectedFile.name.replace(
+        /\.[^/.]+$/,
+        "",
+      );
+
       setSubject(fileName);
     }
   };
@@ -122,7 +134,8 @@ function TestPaper() {
     event.preventDefault();
     setIsDragging(false);
 
-    const droppedFile = event.dataTransfer.files?.[0];
+    const droppedFile =
+      event.dataTransfer.files?.[0];
 
     if (droppedFile) {
       handleFile(droppedFile);
@@ -130,8 +143,14 @@ function TestPaper() {
   };
 
   const generatePaper = () => {
-    if (!file && !topic.trim() && !subject.trim()) {
-      alert("Please enter a subject/topic or upload study material.");
+    if (
+      !file &&
+      !topic.trim() &&
+      !subject.trim()
+    ) {
+      alert(
+        "Please enter a subject/topic or upload study material.",
+      );
       return;
     }
 
@@ -154,7 +173,9 @@ function TestPaper() {
       return Array.from(
         { length: questionCount },
         (_, index) => ({
-          ...sampleShortQuestions[index % sampleShortQuestions.length],
+          ...sampleShortQuestions[
+            index % sampleShortQuestions.length
+          ],
           type: "Short Answer",
         }),
       );
@@ -164,7 +185,9 @@ function TestPaper() {
       return Array.from(
         { length: questionCount },
         (_, index) => ({
-          ...sampleLongQuestions[index % sampleLongQuestions.length],
+          ...sampleLongQuestions[
+            index % sampleLongQuestions.length
+          ],
           type: "Long Answer",
         }),
       );
@@ -174,6 +197,7 @@ function TestPaper() {
       { length: questionCount },
       (_, index) => {
         const isShort = index % 2 === 0;
+
         const source = isShort
           ? sampleShortQuestions
           : sampleLongQuestions;
@@ -192,110 +216,119 @@ function TestPaper() {
 
   const questions = createQuestions();
 
+  /* =========================
+     GENERATED ANSWER KEY
+  ========================= */
+
   if (generated) {
     return (
-      <div className="min-h-[calc(100vh-80px)] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-5xl">
+      <div className="relative min-h-[calc(100vh-80px)] overflow-hidden px-4 py-7 sm:px-6 lg:px-8">
+        {/* Teal atmosphere */}
+        <div className="pointer-events-none absolute inset-0">
+          <div
+            className="absolute left-[5%] top-[5%] h-[430px] w-[430px] rounded-full blur-[150px]"
+            style={{
+              background:
+                "rgba(13,148,136,0.07)",
+            }}
+          />
 
-          {/* RESULT HEADER */}
+          <div
+            className="absolute right-[5%] top-[35%] h-[400px] w-[400px] rounded-full blur-[150px]"
+            style={{
+              background:
+                "rgba(20,184,166,0.045)",
+            }}
+          />
+
+          <div
+            className="absolute bottom-[5%] left-[35%] h-[300px] w-[300px] rounded-full blur-[130px]"
+            style={{
+              background:
+                "rgba(8,145,178,0.035)",
+            }}
+          />
+        </div>
+
+        <div className="relative z-10 mx-auto max-w-5xl">
+          {/* Header */}
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
             <div>
-              <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
-                <Sparkles size={14} />
+              <div className="mb-2 flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] text-teal-300">
+                <Sparkles size={13} />
                 Generated Answer Key
               </div>
 
-              <h1 className="text-2xl font-bold text-white sm:text-3xl">
-                {subject || "Generated Test Paper"}
+              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                {subject ||
+                  "Generated Test Paper"}
               </h1>
 
               {topic && (
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-xs text-slate-500">
                   Topic: {topic}
                 </p>
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={generateAnother}
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-slate-400 transition hover:bg-white/[0.07] hover:text-white"
+                className="flex items-center gap-2 rounded-xl border border-teal-100/[0.08] bg-white/[0.025] px-4 py-2.5 text-[10px] text-slate-400 transition hover:border-teal-300/15 hover:bg-teal-400/[0.04] hover:text-teal-200"
               >
-                <Sparkles size={16} />
+                <Sparkles size={14} />
                 Generate Another
               </button>
 
               <button
                 type="button"
                 onClick={printAnswers}
-                className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-slate-200"
+                className="flex items-center gap-2 rounded-xl border border-teal-300/20 bg-teal-400/[0.08] px-4 py-2.5 text-[10px] font-semibold text-teal-100 transition hover:bg-teal-400/[0.13]"
               >
-                <Printer size={16} />
+                <Printer size={14} />
                 Print Answers
               </button>
             </div>
-
           </div>
 
-          {/* PAPER INFO */}
+          {/* Paper Info */}
           <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <InfoCard
+              label="Question Type"
+              value={questionType}
+            />
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                Question Type
-              </p>
-              <p className="mt-1 text-sm font-medium text-white">
-                {questionType}
-              </p>
-            </div>
+            <InfoCard
+              label="Marks / Question"
+              value={marks}
+            />
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                Marks / Question
-              </p>
-              <p className="mt-1 text-sm font-medium text-white">
-                {marks}
-              </p>
-            </div>
+            <InfoCard
+              label="Questions"
+              value={questionCount}
+            />
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                Questions
-              </p>
-              <p className="mt-1 text-sm font-medium text-white">
-                {questionCount}
-              </p>
-            </div>
+            <InfoCard
+              label="Total Marks"
+              value={totalMarks}
+              highlight
+            />
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                Total Marks
-              </p>
-              <p className="mt-1 text-sm font-medium text-white">
-                {totalMarks}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                Material
-              </p>
-              <p className="mt-1 truncate text-sm font-medium text-white">
-                {file ? file.name : "Topic based"}
-              </p>
-            </div>
-
+            <InfoCard
+              label="Material"
+              value={
+                file ? file.name : "Topic based"
+              }
+            />
           </div>
 
-          {/* QUESTIONS */}
+          {/* Questions */}
           <div className="space-y-4">
-
             <div className="flex items-center gap-2">
               <BookOpen
-                size={18}
-                className="text-slate-400"
+                size={17}
+                className="text-teal-300"
               />
 
               <h2 className="text-sm font-semibold text-white">
@@ -305,24 +338,25 @@ function TestPaper() {
 
             {questions.map((item, index) => (
               <div
-                key={index}
-                className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6"
+                key={`${item.question}-${index}`}
+                className="rounded-2xl border border-teal-100/[0.08] bg-[#061214]/65 p-5 shadow-[0_15px_45px_rgba(0,0,0,0.16)] backdrop-blur-2xl sm:p-6"
               >
                 <div className="flex items-start gap-4">
-
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-xs font-semibold text-slate-300">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-teal-300/15 bg-teal-400/[0.05] text-xs font-semibold text-teal-200">
                     {index + 1}
                   </div>
 
                   <div className="min-w-0 flex-1">
-
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] text-slate-500">
+                      <span className="rounded-full border border-teal-300/10 bg-teal-400/[0.035] px-2.5 py-1 text-[9px] text-teal-200/70">
                         {item.type}
                       </span>
 
-                      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] text-slate-500">
-                        {marks} Marks
+                      <span className="rounded-full border border-white/[0.07] bg-white/[0.02] px-2.5 py-1 text-[9px] text-slate-500">
+                        {marks}{" "}
+                        {Number(marks) === 1
+                          ? "Mark"
+                          : "Marks"}
                       </span>
                     </div>
 
@@ -330,67 +364,94 @@ function TestPaper() {
                       {item.question}
                     </h3>
 
-                    <div className="mt-4 rounded-xl border border-white/10 bg-black/10 p-4">
+                    <div className="mt-4 rounded-xl border border-teal-300/10 bg-black/20 p-4">
                       <div className="mb-2 flex items-center gap-2">
                         <Check
                           size={14}
-                          className="text-slate-500"
+                          className="text-teal-300/70"
                         />
 
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-teal-200/50">
                           Reference Answer
                         </span>
                       </div>
 
-                      <p className="text-sm leading-6 text-slate-400">
+                      <p className="text-xs leading-6 text-slate-400 sm:text-sm">
                         {item.answer}
                       </p>
                     </div>
-
                   </div>
                 </div>
               </div>
             ))}
-
           </div>
 
-          {/* FOOTER NOTICE */}
-          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+          {/* Footer Notice */}
+          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-teal-100/[0.07] bg-teal-400/[0.025] p-4">
             <Sparkles
-              size={16}
-              className="mt-0.5 shrink-0 text-slate-600"
+              size={15}
+              className="mt-0.5 shrink-0 text-teal-300/60"
             />
 
             <div>
-              <p className="text-xs font-medium text-slate-500">
+              <p className="text-[10px] font-medium text-teal-200/60">
                 AI Answer Key
               </p>
 
-              <p className="mt-1 text-xs leading-5 text-slate-700">
-                These are frontend demo questions. Gemma will
-                generate questions and reference answers after backend
+              <p className="mt-1 text-[10px] leading-5 text-slate-600">
+                These are frontend demo questions.
+                Gemma will generate questions and
+                reference answers after backend
                 integration.
               </p>
             </div>
           </div>
-
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-[calc(100vh-80px)] px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
+  /* =========================
+     CONFIGURATION PAGE
+  ========================= */
 
-        {/* HEADER */}
+  return (
+    <div className="relative min-h-[calc(100vh-80px)] overflow-hidden px-4 py-7 sm:px-6 lg:px-8">
+      {/* Teal Background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute left-[5%] top-[5%] h-[450px] w-[450px] rounded-full blur-[160px]"
+          style={{
+            background:
+              "rgba(13,148,136,0.065)",
+          }}
+        />
+
+        <div
+          className="absolute right-[3%] top-[30%] h-[430px] w-[430px] rounded-full blur-[160px]"
+          style={{
+            background:
+              "rgba(20,184,166,0.045)",
+          }}
+        />
+
+        <div
+          className="absolute bottom-[0%] left-[40%] h-[350px] w-[350px] rounded-full blur-[140px]"
+          style={{
+            background:
+              "rgba(8,145,178,0.035)",
+          }}
+        />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-6xl">
+        {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3">
-
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-teal-300/15 bg-teal-400/[0.05]">
               <FileText
                 size={21}
-                className="text-white"
+                className="text-teal-200"
               />
             </div>
 
@@ -399,34 +460,39 @@ function TestPaper() {
                 Test Paper
               </h1>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Generate short and long answer questions with reference answers.
+              <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500 sm:text-sm">
+                Generate short and long answer
+                questions with reference answers.
               </p>
             </div>
-
           </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_390px]">
-
-          {/* CONFIGURATION */}
-          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-
+          {/* Configuration */}
+          <div className="rounded-2xl border border-teal-100/[0.08] bg-[#061214]/65 p-5 shadow-[0_15px_50px_rgba(0,0,0,0.18)] backdrop-blur-2xl sm:p-6">
             <div className="mb-6">
-              <h2 className="text-sm font-semibold text-white">
-                Paper Configuration
-              </h2>
+              <div className="flex items-center gap-2">
+                <Zap
+                  size={15}
+                  className="text-teal-300"
+                />
 
-              <p className="mt-1 text-xs text-slate-600">
-                Configure the type and size of your test paper.
+                <h2 className="text-sm font-semibold text-white">
+                  Paper Configuration
+                </h2>
+              </div>
+
+              <p className="mt-1 text-[10px] text-slate-600">
+                Configure the type and size of your
+                test paper.
               </p>
             </div>
 
             <div className="space-y-5">
-
-              {/* SUBJECT */}
+              {/* Subject */}
               <div>
-                <label className="mb-2 block text-xs font-medium text-slate-500">
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
                   Subject
                 </label>
 
@@ -437,13 +503,13 @@ function TestPaper() {
                     setSubject(event.target.value)
                   }
                   placeholder="e.g. DBMS"
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-700 focus:border-white/20 focus:bg-white/[0.05]"
+                  className="w-full rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3 text-xs text-slate-100 outline-none placeholder:text-slate-600 transition focus:border-teal-300/25 focus:bg-teal-400/[0.025]"
                 />
               </div>
 
-              {/* TOPIC */}
+              {/* Topic */}
               <div>
-                <label className="mb-2 block text-xs font-medium text-slate-500">
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
                   Topic
                 </label>
 
@@ -454,13 +520,13 @@ function TestPaper() {
                     setTopic(event.target.value)
                   }
                   placeholder="e.g. Transactions"
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-700 focus:border-white/20 focus:bg-white/[0.05]"
+                  className="w-full rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3 text-xs text-slate-100 outline-none placeholder:text-slate-600 transition focus:border-teal-300/25 focus:bg-teal-400/[0.025]"
                 />
               </div>
 
-              {/* QUESTION TYPE */}
+              {/* Question Type */}
               <div>
-                <label className="mb-2 block text-xs font-medium text-slate-500">
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
                   Question Type
                 </label>
 
@@ -472,10 +538,10 @@ function TestPaper() {
                       onClick={() =>
                         setQuestionType(type)
                       }
-                      className={`rounded-xl border px-3 py-3 text-xs transition ${
+                      className={`rounded-xl border px-3 py-3 text-[10px] transition ${
                         questionType === type
-                          ? "border-white/20 bg-white/[0.08] text-white ring-1 ring-white/10"
-                          : "border-white/10 bg-white/[0.02] text-slate-500 hover:bg-white/[0.05] hover:text-slate-300"
+                          ? "border-teal-300/25 bg-teal-400/[0.08] text-teal-100 ring-1 ring-teal-300/10"
+                          : "border-white/[0.07] bg-black/20 text-slate-500 hover:border-teal-300/15 hover:bg-teal-400/[0.035] hover:text-slate-300"
                       }`}
                     >
                       {type}
@@ -484,9 +550,9 @@ function TestPaper() {
                 </div>
               </div>
 
-              {/* MARKS */}
+              {/* Marks */}
               <div>
-                <label className="mb-2 block text-xs font-medium text-slate-500">
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
                   Marks per Question
                 </label>
 
@@ -495,19 +561,25 @@ function TestPaper() {
                   onChange={(event) =>
                     setMarks(event.target.value)
                   }
-                  className="w-full rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#081517] px-4 py-3 text-xs text-slate-200 outline-none focus:border-teal-300/25"
                 >
                   {marksOptions.map((mark) => (
-                    <option key={mark} value={mark}>
-                      {mark} {mark === 1 ? "Mark" : "Marks"}
+                    <option
+                      key={mark}
+                      value={mark}
+                    >
+                      {mark}{" "}
+                      {mark === 1
+                        ? "Mark"
+                        : "Marks"}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* QUESTION COUNT */}
+              {/* Question Count */}
               <div>
-                <label className="mb-2 block text-xs font-medium text-slate-500">
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
                   Number of Questions
                 </label>
 
@@ -519,10 +591,10 @@ function TestPaper() {
                       onClick={() =>
                         setQuestionCount(count)
                       }
-                      className={`rounded-xl border py-3 text-xs transition ${
+                      className={`rounded-xl border py-3 text-[10px] transition ${
                         questionCount === count
-                          ? "border-white/20 bg-white/[0.08] text-white"
-                          : "border-white/10 bg-white/[0.02] text-slate-500 hover:bg-white/[0.05] hover:text-slate-300"
+                          ? "border-teal-300/25 bg-teal-400/[0.08] text-teal-100 ring-1 ring-teal-300/10"
+                          : "border-white/[0.07] bg-black/20 text-slate-500 hover:border-teal-300/15 hover:bg-teal-400/[0.035] hover:text-slate-300"
                       }`}
                     >
                       {count}
@@ -530,55 +602,62 @@ function TestPaper() {
                   ))}
                 </div>
               </div>
-
             </div>
 
-            {/* SUMMARY */}
-            <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            {/* Summary */}
+            <div className="mt-6 rounded-xl border border-teal-300/10 bg-teal-400/[0.025] p-4">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600">
+                <span className="text-[10px] text-slate-600">
                   Total Marks
                 </span>
 
-                <span className="text-lg font-semibold text-white">
+                <span className="text-lg font-semibold text-teal-100">
                   {totalMarks}
                 </span>
               </div>
 
-              <div className="mt-3 h-px bg-white/10" />
+              <div className="mt-3 h-px bg-white/[0.06]" />
 
-              <div className="mt-3 flex items-center justify-between text-xs">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[9px]">
                 <span className="text-slate-600">
-                  {questionCount} questions × {marks} marks
+                  {questionCount} questions ×{" "}
+                  {marks} marks
                 </span>
 
-                <span className="text-slate-500">
+                <span className="text-teal-200/50">
                   {questionType}
                 </span>
               </div>
             </div>
 
+            {/* Generate */}
             <button
               type="button"
               onClick={generatePaper}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-slate-200"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-teal-300/20 bg-teal-400/[0.08] px-5 py-3.5 text-xs font-semibold text-teal-100 transition hover:border-teal-300/30 hover:bg-teal-400/[0.13]"
             >
-              <Zap size={17} />
+              <Zap size={16} />
               Generate Answer Key
             </button>
-
           </div>
 
-          {/* UPLOAD */}
-          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-
+          {/* Upload */}
+          <div className="rounded-2xl border border-teal-100/[0.08] bg-[#061214]/65 p-5 shadow-[0_15px_50px_rgba(0,0,0,0.18)] backdrop-blur-2xl sm:p-6">
             <div className="mb-5">
-              <h2 className="text-sm font-semibold text-white">
-                Study Material
-              </h2>
+              <div className="flex items-center gap-2">
+                <BookOpen
+                  size={15}
+                  className="text-teal-300"
+                />
 
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Upload notes or study material to generate relevant questions.
+                <h2 className="text-sm font-semibold text-white">
+                  Study Material
+                </h2>
+              </div>
+
+              <p className="mt-1 text-[10px] leading-5 text-slate-600">
+                Upload notes or study material to
+                generate relevant questions.
               </p>
             </div>
 
@@ -594,8 +673,8 @@ function TestPaper() {
                 onDrop={handleDrop}
                 className={`flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-5 text-center transition ${
                   isDragging
-                    ? "border-white/30 bg-white/[0.08]"
-                    : "border-white/10 bg-white/[0.015] hover:border-white/20 hover:bg-white/[0.04]"
+                    ? "border-teal-300/35 bg-teal-400/[0.08]"
+                    : "border-white/[0.09] bg-black/20 hover:border-teal-300/20 hover:bg-teal-400/[0.035]"
                 }`}
               >
                 <input
@@ -603,93 +682,130 @@ function TestPaper() {
                   accept=".pdf,.docx,.txt,.jpg,.jpeg,.png"
                   className="hidden"
                   onChange={(event) =>
-                    handleFile(event.target.files?.[0])
+                    handleFile(
+                      event.target.files?.[0],
+                    )
                   }
                 />
 
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.06]">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-teal-300/15 bg-teal-400/[0.05]">
                   <Upload
                     size={21}
-                    className="text-slate-400"
+                    className="text-teal-300"
                   />
                 </div>
 
-                <p className="text-sm font-medium text-slate-300">
+                <p className="text-xs font-medium text-slate-300">
                   Drop your file here
                 </p>
 
-                <p className="mt-1 text-xs text-slate-600">
+                <p className="mt-1 text-[10px] text-slate-600">
                   or click to browse
                 </p>
 
-                <p className="mt-4 text-[10px] uppercase tracking-wider text-slate-700">
-                  PDF · DOCX · TXT · JPG · PNG
+                <p className="mt-4 text-[8px] uppercase tracking-[0.15em] text-slate-700">
+                  PDF · DOCX · TXT · JPG · JPEG · PNG
                 </p>
               </label>
             ) : (
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-
+              <div className="rounded-xl border border-teal-300/15 bg-teal-400/[0.035] p-4">
                 <div className="flex items-center gap-3">
-
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.07]">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-teal-300/15 bg-teal-400/[0.06]">
                     <FileText
                       size={19}
-                      className="text-slate-300"
+                      className="text-teal-300"
                     />
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-white">
+                    <p className="truncate text-xs font-medium text-slate-200">
                       {file.name}
                     </p>
 
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
+                    <p className="mt-1 text-[9px] text-slate-600">
+                      {(
+                        file.size /
+                        1024 /
+                        1024
+                      ).toFixed(2)}{" "}
+                      MB · Ready
                     </p>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setFile(null)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.08] hover:text-white"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
                     title="Remove file"
                   >
                     <X size={16} />
                   </button>
-
                 </div>
               </div>
             )}
 
-            {/* INFO */}
-            <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-
+            {/* Info */}
+            <div className="mt-5 rounded-xl border border-teal-300/10 bg-teal-400/[0.02] p-4">
               <div className="flex items-start gap-3">
-
                 <Sparkles
-                  size={16}
-                  className="mt-0.5 shrink-0 text-slate-600"
+                  size={15}
+                  className="mt-0.5 shrink-0 text-teal-300/60"
                 />
 
                 <div>
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-[10px] font-medium text-teal-200/60">
                     How it works
                   </p>
 
-                  <p className="mt-1 text-xs leading-5 text-slate-700">
-                    Upload your material or enter a topic. Gemma will
-                    later generate questions and reference answers
+                  <p className="mt-1 text-[10px] leading-5 text-slate-600">
+                    Upload your material or enter a
+                    topic. Gemma will later generate
+                    questions and reference answers
                     based on your selected configuration.
                   </p>
                 </div>
-
               </div>
             </div>
-
           </div>
         </div>
 
+        {/* Footer */}
+        <div className="mt-7 flex items-center justify-center gap-2 py-3">
+          <span className="h-1.5 w-1.5 rounded-full bg-teal-300/60" />
+
+          <span className="text-[8px] uppercase tracking-[0.18em] text-slate-600">
+            OFFSEDU · Local AI · Gemma · Ollama
+          </span>
+        </div>
       </div>
+    </div>
+  );
+}
+
+/* =========================
+   SMALL COMPONENTS
+========================= */
+
+function InfoCard({
+  label,
+  value,
+  highlight = false,
+}) {
+  return (
+    <div className="rounded-xl border border-teal-100/[0.07] bg-[#061214]/60 p-4 backdrop-blur-xl">
+      <p className="text-[8px] uppercase tracking-[0.12em] text-slate-600">
+        {label}
+      </p>
+
+      <p
+        className={`mt-1 truncate text-xs font-medium ${
+          highlight
+            ? "text-teal-200"
+            : "text-slate-200"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }

@@ -21,7 +21,6 @@ const features = [
     path: "/chat",
     icon: MessageCircle,
     color: "cyan",
-    glow: "rgba(34,211,238,0.45)",
   },
   {
     title: "Explain",
@@ -29,7 +28,6 @@ const features = [
     path: "/explain",
     icon: Brain,
     color: "violet",
-    glow: "rgba(167,139,250,0.45)",
   },
   {
     title: "Quiz",
@@ -37,7 +35,6 @@ const features = [
     path: "/quiz",
     icon: Zap,
     color: "amber",
-    glow: "rgba(251,191,36,0.45)",
   },
   {
     title: "Test Paper",
@@ -45,7 +42,6 @@ const features = [
     path: "/test-paper",
     icon: FileText,
     color: "emerald",
-    glow: "rgba(52,211,153,0.45)",
   },
   {
     title: "Study Plan",
@@ -53,7 +49,6 @@ const features = [
     path: "/study-plan",
     icon: CalendarDays,
     color: "blue",
-    glow: "rgba(96,165,250,0.45)",
   },
   {
     title: "Documents",
@@ -61,7 +56,6 @@ const features = [
     path: "/documents",
     icon: Files,
     color: "pink",
-    glow: "rgba(244,114,182,0.45)",
   },
   {
     title: "File Tools",
@@ -69,7 +63,6 @@ const features = [
     path: "/file-tools",
     icon: Wrench,
     color: "orange",
-    glow: "rgba(251,146,60,0.45)",
   },
 ];
 
@@ -81,6 +74,7 @@ const colorClasses = {
     glow: "shadow-[0_0_35px_rgba(34,211,238,0.22)]",
     dot: "bg-cyan-300",
   },
+
   violet: {
     border: "border-violet-400/30",
     bg: "bg-violet-400/[0.08]",
@@ -88,6 +82,7 @@ const colorClasses = {
     glow: "shadow-[0_0_35px_rgba(167,139,250,0.22)]",
     dot: "bg-violet-300",
   },
+
   amber: {
     border: "border-amber-400/30",
     bg: "bg-amber-400/[0.08]",
@@ -95,6 +90,7 @@ const colorClasses = {
     glow: "shadow-[0_0_35px_rgba(251,191,36,0.22)]",
     dot: "bg-amber-300",
   },
+
   emerald: {
     border: "border-emerald-400/30",
     bg: "bg-emerald-400/[0.08]",
@@ -102,6 +98,7 @@ const colorClasses = {
     glow: "shadow-[0_0_35px_rgba(52,211,153,0.22)]",
     dot: "bg-emerald-300",
   },
+
   blue: {
     border: "border-blue-400/30",
     bg: "bg-blue-400/[0.08]",
@@ -109,6 +106,7 @@ const colorClasses = {
     glow: "shadow-[0_0_35px_rgba(96,165,250,0.22)]",
     dot: "bg-blue-300",
   },
+
   pink: {
     border: "border-pink-400/30",
     bg: "bg-pink-400/[0.08]",
@@ -116,6 +114,7 @@ const colorClasses = {
     glow: "shadow-[0_0_35px_rgba(244,114,182,0.22)]",
     dot: "bg-pink-300",
   },
+
   orange: {
     border: "border-orange-400/30",
     bg: "bg-orange-400/[0.08]",
@@ -130,10 +129,6 @@ function Home() {
   const [isPaused, setIsPaused] = useState(false);
   const [activeFeature, setActiveFeature] = useState(null);
 
-  /*
-    Smooth manual animation using requestAnimationFrame.
-    This avoids the CSS transform conflict from animate-spin.
-  */
   useEffect(() => {
     let animationFrame;
     let lastTime = performance.now();
@@ -167,15 +162,71 @@ function Home() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] overflow-hidden px-4 py-8 sm:px-6 lg:px-8">
-      {/* BACKGROUND */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-1/2 top-[42%] h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/[0.018] blur-3xl" />
+    <div className="relative min-h-[calc(100vh-80px)] overflow-hidden px-4 py-8 sm:px-6 lg:px-8">
+      {/* =========================================================
+          TEAL GRADIENT BACKGROUND
+      ========================================================== */}
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        {/* Particle Wave Image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: "url('/backgrounds/particle-wave.jpg')",
+          }}
+        />
 
-        <div className="absolute left-[15%] top-[25%] h-64 w-64 rounded-full bg-violet-500/[0.015] blur-3xl" />
+        {/* Deep Teal → Cyan → Blue → Black Gradient */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(2,28,30,0.96) 0%, rgba(4,55,57,0.88) 28%, rgba(7,63,73,0.80) 48%, rgba(14,38,57,0.88) 68%, rgba(3,9,18,0.96) 100%)",
+          }}
+        />
 
-        <div className="absolute bottom-[10%] right-[10%] h-72 w-72 rounded-full bg-blue-500/[0.015] blur-3xl" />
+        {/* Teal Atmospheric Glow - Left */}
+        <div
+          className="absolute -left-40 top-10 h-[520px] w-[520px] rounded-full blur-[130px]"
+          style={{
+            background: "rgba(13,148,136,0.20)",
+          }}
+        />
 
+        {/* Cyan Atmospheric Glow - Center */}
+        <div
+          className="absolute left-[30%] top-[25%] h-[420px] w-[420px] rounded-full blur-[140px]"
+          style={{
+            background: "rgba(20,184,166,0.10)",
+          }}
+        />
+
+        {/* Deep Blue Glow - Right */}
+        <div
+          className="absolute right-[-180px] top-[15%] h-[600px] w-[600px] rounded-full blur-[150px]"
+          style={{
+            background: "rgba(14,116,144,0.14)",
+          }}
+        />
+
+        {/* Center Readability Overlay */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(2,25,28,0.08) 0%, rgba(2,10,18,0.38) 62%, rgba(1,5,10,0.82) 100%)",
+          }}
+        />
+
+        {/* Bottom Fade */}
+        <div
+          className="absolute inset-x-0 bottom-0 h-80"
+          style={{
+            background:
+              "linear-gradient(to top, rgba(2,7,12,0.96), transparent)",
+          }}
+        />
+
+        {/* Subtle Technical Grid */}
         <div
           className="absolute inset-0 opacity-[0.025]"
           style={{
@@ -186,31 +237,36 @@ function Home() {
         />
       </div>
 
-      <div className="mx-auto max-w-7xl">
+      {/* =========================================================
+          MAIN CONTENT
+      ========================================================== */}
+      <div className="relative z-10 mx-auto max-w-7xl">
         {/* HEADER */}
         <div className="mx-auto max-w-3xl text-center">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5">
-            <Sparkles size={13} className="text-cyan-300" />
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-teal-300/15 bg-black/30 px-3 py-1.5 backdrop-blur-md">
+            <Sparkles size={13} className="text-teal-300" />
 
-            <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
+            <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
               Local AI Study Environment
             </span>
           </div>
 
           <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
             Your Study.
-            <span className="block bg-gradient-to-r from-cyan-300 via-violet-300 to-blue-300 bg-clip-text text-transparent">
+            <span className="block bg-gradient-to-r from-teal-200 via-cyan-200 to-slate-200 bg-clip-text text-transparent">
               Reimagined.
             </span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-slate-500 sm:text-base">
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
             OFFSEDU is your personal AI study environment for learning,
             practicing, planning and managing your study material.
           </p>
         </div>
 
-        {/* STUDY UNIVERSE */}
+        {/* =========================================================
+            STUDY UNIVERSE
+        ========================================================== */}
         <div
           className="relative mx-auto mt-10 h-[570px] w-full max-w-[900px] sm:h-[620px]"
           onMouseEnter={() => setIsPaused(true)}
@@ -220,12 +276,12 @@ function Home() {
           }}
         >
           {/* OUTER ORBIT */}
-          <div className="absolute left-1/2 top-1/2 h-[450px] w-[450px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.055] sm:h-[550px] sm:w-[550px]" />
+          <div className="absolute left-1/2 top-1/2 h-[450px] w-[450px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-teal-100/[0.10] sm:h-[550px] sm:w-[550px]" />
 
           {/* SECOND ORBIT */}
-          <div className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-white/[0.045] sm:h-[420px] sm:w-[420px]" />
+          <div className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-teal-100/[0.08] sm:h-[420px] sm:w-[420px]" />
 
-          {/* ROTATING ORBIT CONTENT */}
+          {/* ROTATING ORBIT */}
           <div
             className="absolute inset-0"
             style={{
@@ -275,22 +331,14 @@ function Home() {
                       }
                       className="group relative block"
                     >
-                      {/* GLOW */}
+                      {/* FEATURE GLOW */}
                       <div
-                        className={`absolute -inset-5 rounded-[28px] opacity-20 blur-2xl transition-all duration-500 group-hover:opacity-70 ${
-                          styles.bg
-                        }`}
+                        className={`absolute -inset-5 rounded-[28px] opacity-20 blur-2xl transition-all duration-500 group-hover:opacity-70 ${styles.bg}`}
                       />
 
                       {/* ICON CARD */}
                       <div
-                        className={`relative flex h-[76px] w-[76px] items-center justify-center rounded-[22px] border backdrop-blur-xl transition-all duration-300 sm:h-[88px] sm:w-[88px] ${
-                          styles.border
-                        } ${
-                          styles.bg
-                        } ${
-                          styles.glow
-                        } ${
+                        className={`relative flex h-[76px] w-[76px] items-center justify-center rounded-[22px] border bg-black/45 backdrop-blur-xl transition-all duration-300 sm:h-[88px] sm:w-[88px] ${styles.border} ${styles.glow} ${
                           isActive
                             ? "scale-125"
                             : "group-hover:scale-110"
@@ -298,29 +346,23 @@ function Home() {
                       >
                         {/* INNER RING */}
                         <div
-                          className={`absolute inset-2 rounded-[17px] border opacity-30 ${
-                            styles.border
-                          }`}
+                          className={`absolute inset-2 rounded-[17px] border opacity-30 ${styles.border}`}
                         />
 
                         {/* ICON */}
                         <Icon
                           size={34}
                           strokeWidth={1.7}
-                          className={`relative z-10 transition-all duration-300 sm:h-9 sm:w-9 ${
-                            styles.icon
-                          } ${
+                          className={`relative z-10 transition-all duration-300 sm:h-9 sm:w-9 ${styles.icon} ${
                             isActive
                               ? "drop-shadow-[0_0_12px_currentColor]"
                               : ""
                           }`}
                         />
 
-                        {/* SMALL LIGHT */}
+                        {/* STATUS DOT */}
                         <span
-                          className={`absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full opacity-80 shadow-[0_0_10px_currentColor] ${
-                            styles.dot
-                          }`}
+                          className={`absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full opacity-80 shadow-[0_0_10px_currentColor] ${styles.dot}`}
                         />
                       </div>
 
@@ -330,7 +372,7 @@ function Home() {
                           className={`text-[10px] font-semibold transition-all duration-300 sm:text-xs ${
                             isActive
                               ? styles.icon
-                              : "text-slate-500 group-hover:text-white"
+                              : "text-slate-300 group-hover:text-white"
                           }`}
                         >
                           {feature.title}
@@ -343,30 +385,34 @@ function Home() {
             })}
           </div>
 
-          {/* CENTER CORE */}
+          {/* =====================================================
+              CENTER CORE
+          ====================================================== */}
           <div className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
-            {/* PULSE RINGS */}
-            <div className="absolute -inset-12 animate-ping rounded-full border border-cyan-400/[0.04] duration-[3000ms]" />
+            {/* PULSE RING */}
+            <div className="absolute -inset-12 animate-ping rounded-full border border-teal-300/[0.06] duration-[3000ms]" />
 
-            <div className="absolute -inset-20 rounded-full border border-violet-400/[0.025]" />
+            {/* OUTER RING */}
+            <div className="absolute -inset-20 rounded-full border border-cyan-300/[0.035]" />
 
-            <div className="relative flex h-36 w-36 flex-col items-center justify-center rounded-full border border-white/15 bg-[#080b12]/95 shadow-[0_0_100px_rgba(56,189,248,0.08)] backdrop-blur-xl sm:h-44 sm:w-44">
+            {/* CORE */}
+            <div className="relative flex h-36 w-36 flex-col items-center justify-center rounded-full border border-teal-200/15 bg-[#061316]/90 shadow-[0_0_100px_rgba(20,184,166,0.10)] backdrop-blur-xl sm:h-44 sm:w-44">
               {/* CORE ICON */}
-              <div className="relative mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.06] shadow-[0_0_30px_rgba(34,211,238,0.12)]">
+              <div className="relative mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-teal-300/20 bg-teal-400/[0.07] shadow-[0_0_30px_rgba(20,184,166,0.14)]">
                 <Sparkles
                   size={27}
                   strokeWidth={1.5}
-                  className="text-cyan-200"
+                  className="text-teal-200"
                 />
 
-                <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.8)]" />
+                <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.8)]" />
               </div>
 
               <p className="text-sm font-bold tracking-[0.18em] text-white">
                 OFFSEDU
               </p>
 
-              <p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-slate-600">
+              <p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-slate-500">
                 AI CORE
               </p>
             </div>
@@ -376,12 +422,12 @@ function Home() {
         {/* ACTIVE FEATURE INFO */}
         <div className="mx-auto -mt-1 min-h-[48px] max-w-lg text-center">
           {activeFeature ? (
-            <div className="animate-in fade-in duration-300">
+            <div>
               <p className="text-xs font-semibold text-white">
                 {activeFeature}
               </p>
 
-              <p className="mt-1 text-[10px] text-slate-600">
+              <p className="mt-1 text-[10px] text-slate-300">
                 {
                   features.find(
                     (item) =>
@@ -391,18 +437,20 @@ function Home() {
               </p>
             </div>
           ) : (
-            <p className="text-[10px] uppercase tracking-[0.18em] text-slate-700">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
               Hover over a module to explore
             </p>
           )}
         </div>
 
-        {/* CONTROLS */}
+        {/* =========================================================
+            CONTROLS
+        ========================================================== */}
         <div className="mt-5 flex items-center justify-center gap-2">
           <button
             type="button"
             onClick={rotateLeft}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-600 transition hover:border-cyan-400/20 hover:bg-cyan-400/[0.05] hover:text-cyan-300"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-teal-200/10 bg-black/30 text-slate-300 backdrop-blur-md transition hover:border-teal-300/25 hover:bg-teal-400/[0.06] hover:text-teal-200"
           >
             <ChevronLeft size={16} />
           </button>
@@ -410,7 +458,7 @@ function Home() {
           <button
             type="button"
             onClick={resetRotation}
-            className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-[10px] uppercase tracking-wider text-slate-600 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+            className="rounded-xl border border-teal-200/10 bg-black/30 px-4 py-2 text-[10px] uppercase tracking-wider text-slate-300 backdrop-blur-md transition hover:border-teal-200/20 hover:bg-white/[0.06] hover:text-white"
           >
             Reset Orbit
           </button>
@@ -418,20 +466,22 @@ function Home() {
           <button
             type="button"
             onClick={rotateRight}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-600 transition hover:border-violet-400/20 hover:bg-violet-400/[0.05] hover:text-violet-300"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-teal-200/10 bg-black/30 text-slate-300 backdrop-blur-md transition hover:border-teal-300/25 hover:bg-teal-400/[0.06] hover:text-teal-200"
           >
             <ChevronRight size={16} />
           </button>
         </div>
 
-        {/* QUICK START */}
+        {/* =========================================================
+            QUICK START
+        ========================================================== */}
         <div className="mx-auto mt-10 max-w-5xl">
           <div className="mb-4">
-            <p className="text-xs font-semibold text-slate-400">
+            <p className="text-xs font-semibold text-slate-200">
               Quick Start
             </p>
 
-            <p className="mt-1 text-[10px] text-slate-700">
+            <p className="mt-1 text-[10px] text-slate-400">
               Start studying with one click.
             </p>
           </div>
@@ -463,11 +513,13 @@ function Home() {
           </div>
         </div>
 
-        {/* FOOTER */}
+        {/* =========================================================
+            FOOTER
+        ========================================================== */}
         <div className="flex items-center justify-center gap-2 py-8">
-          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400/60 shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-teal-300/70 shadow-[0_0_8px_rgba(45,212,191,0.5)]" />
 
-          <span className="text-[9px] uppercase tracking-[0.18em] text-slate-700">
+          <span className="text-[9px] uppercase tracking-[0.18em] text-slate-400">
             Local AI · Gemma · Ollama
           </span>
         </div>
@@ -488,7 +540,7 @@ function QuickCard({
   return (
     <Link
       to={path}
-      className={`group rounded-2xl border p-4 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 ${styles.border} ${styles.bg}`}
+      className={`group rounded-2xl border bg-black/35 p-4 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 ${styles.border} ${styles.bg}`}
     >
       <div className="flex items-center gap-3">
         <div
@@ -501,18 +553,18 @@ function QuickCard({
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-slate-300 group-hover:text-white">
+          <p className="text-xs font-semibold text-slate-200 group-hover:text-white">
             {title}
           </p>
 
-          <p className="mt-1 truncate text-[10px] text-slate-600">
+          <p className="mt-1 truncate text-[10px] text-slate-400">
             {description}
           </p>
         </div>
 
         <ArrowRight
           size={14}
-          className="text-slate-700 transition-all group-hover:translate-x-1 group-hover:text-slate-400"
+          className="text-slate-400 transition-all group-hover:translate-x-1 group-hover:text-slate-200"
         />
       </div>
     </Link>
