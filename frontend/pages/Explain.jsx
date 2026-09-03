@@ -15,7 +15,9 @@ import {
   X,
 } from "lucide-react";
 import { useRef, useState } from "react";
+
 import { explainTopic as explainTopicService } from "../services/explanationService";
+import { uploadDocument } from "../services/documentService";
 
 const languages = [
   "English",
@@ -44,12 +46,16 @@ function Explain() {
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState("English");
   const [level, setLevel] = useState("Simple");
+
   const [file, setFile] = useState(null);
+  const [documentId, setDocumentId] = useState(null);
+
   const [isDragging, setIsDragging] = useState(false);
   const [isExplaining, setIsExplaining] = useState(false);
   const [explanation, setExplanation] = useState("");
   const [copied, setCopied] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+
   const fileInputRef = useRef(null);
 
   const handleFile = (selectedFile) => {
@@ -72,6 +78,10 @@ function Explain() {
     }
 
     setFile(selectedFile);
+
+    // New file means a new document ID is required.
+    setDocumentId(null);
+
     setStatusMessage("");
 
     if (!subject.trim()) {
@@ -86,19 +96,23 @@ function Explain() {
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files?.[0];
+
     handleFile(selectedFile);
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
+
     setIsDragging(false);
 
     const droppedFile = event.dataTransfer.files?.[0];
+
     handleFile(droppedFile);
   };
 
   const handleDragOver = (event) => {
     event.preventDefault();
+
     setIsDragging(true);
   };
 
@@ -108,6 +122,7 @@ function Explain() {
 
   const removeFile = () => {
     setFile(null);
+    setDocumentId(null);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -117,10 +132,11 @@ function Explain() {
   const explainTopic = async () => {
     const displayTopic =
       topic.trim() ||
-      subject.trim() ||
-      file?.name.replace(/\.[^/.]+$/, "");
+      (file
+        ? file.name.replace(/\.[^/.]+$/, "")
+        : subject.trim());
 
-    if (!displayTopic) {
+    if (!displayTopic && !file) {
       setStatusMessage(
         "Please enter a subject/topic or upload study material first.",
       );
@@ -133,7 +149,50 @@ function Explain() {
     setStatusMessage("");
 
     try {
-      const data = await explainTopicService(displayTopic);
+      let selectedDocumentId = documentId;
+
+      /*
+       * ---------------------------------------------------------
+       * Upload selected document if it has not been uploaded yet.
+       * ---------------------------------------------------------
+       */
+      if (file && !selectedDocumentId) {
+        setStatusMessage(
+          "Uploading and processing your study material...",
+        );
+
+        const uploadResult = await uploadDocument(file);
+
+        if (
+          !uploadResult?.success ||
+          !uploadResult?.document_id
+        ) {
+          throw new Error(
+            uploadResult?.error ||
+              "Unable to process the study material.",
+          );
+        }
+
+        selectedDocumentId = uploadResult.document_id;
+
+        setDocumentId(selectedDocumentId);
+
+        setStatusMessage(
+          "Study material processed. Generating explanation...",
+        );
+      }
+
+      /*
+       * ---------------------------------------------------------
+       * Send topic + document + language + explanation level.
+       * ---------------------------------------------------------
+       */
+      const data = await explainTopicService({
+        topic: displayTopic,
+        documentId: selectedDocumentId,
+        language,
+        level,
+      });
 
       setExplanation(
         data?.explanation ||
@@ -141,6 +200,8 @@ function Explain() {
           data?.message ||
           "No explanation was returned by the backend.",
       );
+
+      setStatusMessage("");
     } catch (error) {
       console.error("Explanation error:", error);
 
@@ -160,10 +221,14 @@ function Explain() {
     setTopic("");
     setLanguage("English");
     setLevel("Simple");
+
     setFile(null);
+    setDocumentId(null);
+
     setExplanation("");
     setStatusMessage("");
     setCopied(false);
+    setIsDragging(false);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -195,8 +260,8 @@ function Explain() {
       {/* =========================================================
           EXPLAIN PAGE ATMOSPHERE
       ========================================================== */}
+
       <div className="pointer-events-none absolute inset-0 z-0">
-        {/* Teal Glow */}
         <div
           className="absolute left-[5%] top-[10%] h-[420px] w-[420px] rounded-full blur-[150px]"
           style={{
@@ -204,7 +269,6 @@ function Explain() {
           }}
         />
 
-        {/* Cyan Glow */}
         <div
           className="absolute right-[5%] top-[35%] h-[400px] w-[400px] rounded-full blur-[150px]"
           style={{
@@ -216,8 +280,11 @@ function Explain() {
       {/* =========================================================
           MAIN CONTENT
       ========================================================== */}
+
       <div className="relative z-10 mx-auto max-w-7xl">
+
         {/* HEADER */}
+
         <div className="mb-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -256,11 +323,15 @@ function Explain() {
         {/* =========================================================
             TWO COLUMN LAYOUT
         ========================================================== */}
+
         <div className="grid gap-5 lg:grid-cols-[390px_minmax(0,1fr)]">
+
           {/* =====================================================
               SETTINGS CARD
           ====================================================== */}
+
           <section className="h-fit rounded-2xl border border-teal-100/[0.08] bg-[#061214]/72 p-5 shadow-[0_15px_50px_rgba(0,0,0,0.20)] backdrop-blur-2xl">
+
             <div className="mb-5 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-300/15 bg-teal-400/[0.06]">
                 <Languages
@@ -281,6 +352,7 @@ function Explain() {
             </div>
 
             {/* Subject */}
+
             <div className="mb-4">
               <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Subject
@@ -298,6 +370,7 @@ function Explain() {
             </div>
 
             {/* Topic */}
+
             <div className="mb-4">
               <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Topic
@@ -315,6 +388,7 @@ function Explain() {
             </div>
 
             {/* Language */}
+
             <div className="mb-4">
               <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Explanation Language
@@ -339,6 +413,7 @@ function Explain() {
             </div>
 
             {/* Explanation Level */}
+
             <div className="mb-5">
               <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Explanation Level
@@ -367,6 +442,7 @@ function Explain() {
             </div>
 
             {/* Upload */}
+
             <div>
               <label className="mb-2 block text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Study Material
@@ -437,7 +513,9 @@ function Explain() {
                       </p>
 
                       <p className="mt-0.5 text-[8px] text-slate-500">
-                        Ready for explanation
+                        {documentId
+                          ? "Processed and ready"
+                          : "Ready for explanation"}
                       </p>
                     </div>
 
@@ -454,6 +532,7 @@ function Explain() {
             </div>
 
             {/* Status */}
+
             {statusMessage && (
               <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-300/10 bg-amber-400/[0.035] px-3 py-2.5">
                 <AlertCircle
@@ -468,6 +547,7 @@ function Explain() {
             )}
 
             {/* Explain Button */}
+
             <button
               type="button"
               onClick={explainTopic}
@@ -480,48 +560,53 @@ function Explain() {
                     size={15}
                     className="animate-spin"
                   />
-                  Explaining...
+                  Generating Explanation...
                 </>
               ) : (
                 <>
-                  <Play size={14} />
-                  Explain with AI
+                  <Play size={15} />
+                  Explain Topic
                 </>
               )}
             </button>
 
             {/* Privacy */}
-            <div className="mt-4 flex items-start gap-2">
-              <div className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-300 shadow-[0_0_8px_rgba(45,212,191,0.6)]" />
 
-              <p className="text-[8px] leading-4 text-slate-500">
-                Local-first architecture. Explanation is generated by
-                your local Gemma backend.
+            <div className="mt-4 flex items-start gap-2">
+              <Lightbulb
+                size={13}
+                className="mt-0.5 shrink-0 text-teal-400/70"
+              />
+
+              <p className="text-[8px] leading-4 text-slate-600">
+                Your study material is processed by the local
+                AI backend for this explanation.
               </p>
             </div>
           </section>
 
           {/* =====================================================
-              EXPLANATION RESULT
+              RESULT CARD
           ====================================================== */}
-          <section className="flex min-h-[620px] flex-col rounded-2xl border border-teal-100/[0.08] bg-[#061214]/65 shadow-[0_15px_50px_rgba(0,0,0,0.20)] backdrop-blur-2xl">
-            {/* Result Header */}
-            <div className="flex items-center justify-between border-b border-teal-100/[0.08] px-5 py-4">
+
+          <section className="min-h-[520px] rounded-2xl border border-teal-100/[0.08] bg-[#061214]/72 p-5 shadow-[0_15px_50px_rgba(0,0,0,0.20)] backdrop-blur-2xl">
+
+            <div className="mb-5 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-teal-300/15 bg-teal-400/[0.06]">
-                  <Lightbulb
-                    size={17}
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-300/15 bg-teal-400/[0.06]">
+                  <BookOpen
+                    size={18}
                     className="text-teal-300"
                   />
                 </div>
 
                 <div>
                   <h2 className="text-sm font-semibold text-white">
-                    AI Explanation
+                    Explanation
                   </h2>
 
                   <p className="mt-0.5 text-[9px] text-slate-500">
-                    Your explanation will appear here
+                    Generated by your local AI study assistant.
                   </p>
                 </div>
               </div>
@@ -530,7 +615,7 @@ function Explain() {
                 <button
                   type="button"
                   onClick={copyExplanation}
-                  className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-2 text-[9px] text-slate-400 transition hover:border-teal-300/15 hover:bg-teal-400/[0.04] hover:text-teal-200"
+                  className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[9px] text-slate-400 transition hover:border-teal-300/15 hover:text-teal-200"
                 >
                   {copied ? (
                     <>
@@ -547,132 +632,78 @@ function Explain() {
               )}
             </div>
 
-            {/* Result Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-6">
-              {!explanation && !isExplaining ? (
-                <div className="flex min-h-[500px] flex-col items-center justify-center text-center">
-                  <div className="relative mb-5">
-                    <div className="absolute -inset-6 rounded-full bg-teal-400/[0.05] blur-2xl" />
-
-                    <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-teal-300/15 bg-[#071719]/90">
-                      <Lightbulb
-                        size={28}
-                        strokeWidth={1.5}
-                        className="text-teal-200"
-                      />
-                    </div>
-                  </div>
-
-                  <h3 className="text-sm font-semibold text-slate-200">
-                    Ready to explain
-                  </h3>
-
-                  <p className="mt-2 max-w-sm text-[10px] leading-5 text-slate-500">
-                    Enter a topic or upload study material, choose your
-                    preferred language and explanation level, then start.
-                  </p>
+            {!explanation && !isExplaining ? (
+              <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
+                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-teal-300/10 bg-teal-400/[0.035]">
+                  <BookOpen
+                    size={26}
+                    className="text-teal-300/60"
+                  />
                 </div>
-              ) : isExplaining ? (
-                <div className="flex min-h-[500px] flex-col items-center justify-center text-center">
-                  <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-teal-300/15 bg-teal-400/[0.06]">
-                    <Loader2
-                      size={24}
-                      className="animate-spin text-teal-300"
-                    />
-                  </div>
 
-                  <p className="text-sm font-medium text-white">
-                    Gemma is preparing your explanation
-                  </p>
+                <h3 className="text-sm font-medium text-slate-300">
+                  Ready to explain
+                </h3>
 
-                  <p className="mt-2 text-[10px] text-slate-500">
-                    Your local AI backend is generating the response.
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  {/* Explanation Meta */}
-                  <div className="mb-5 flex flex-wrap gap-2">
-                    <MetaBadge
-                      label={subject || "General Topic"}
-                    />
+                <p className="mt-2 max-w-md text-[10px] leading-5 text-slate-600">
+                  Enter a topic or upload study material,
+                  choose your preferred explanation style,
+                  and let the local AI assistant explain it.
+                </p>
+              </div>
+            ) : isExplaining ? (
+              <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
+                <Loader2
+                  size={28}
+                  className="animate-spin text-teal-300"
+                />
 
-                    <MetaBadge label={language} />
+                <p className="mt-4 text-xs font-medium text-slate-300">
+                  Processing your request...
+                </p>
 
-                    <MetaBadge label={level} />
-                  </div>
+                <p className="mt-2 text-[9px] text-slate-600">
+                  Your local AI backend is generating the explanation.
+                </p>
+              </div>
+            ) : (
+              <div className="min-h-[400px]">
+                <div className="mb-5 rounded-xl border border-teal-300/10 bg-teal-400/[0.025] px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[9px] text-slate-500">
+                    <span>
+                      Language:
+                      <span className="ml-1 text-teal-200">
+                        {language}
+                      </span>
+                    </span>
 
-                  {/* Explanation */}
-                  <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-5">
-                    <div className="prose prose-invert max-w-none">
-                      {explanation
-                        .split("\n")
-                        .map((paragraph, index) => (
-                          <p
-                            key={`${paragraph}-${index}`}
-                            className="mb-4 whitespace-pre-wrap text-xs leading-7 text-slate-300 last:mb-0"
-                          >
-                            {paragraph}
-                          </p>
-                        ))}
-                    </div>
-                  </div>
+                    <span>
+                      Level:
+                      <span className="ml-1 text-teal-200">
+                        {level}
+                      </span>
+                    </span>
 
-                  {/* Voice */}
-                  <div className="mt-5 flex items-center justify-between rounded-xl border border-teal-300/10 bg-teal-400/[0.025] px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-400/[0.06]">
-                        <Volume2
-                          size={15}
-                          className="text-teal-300"
-                        />
-                      </div>
-
-                      <div>
-                        <p className="text-[10px] font-medium text-slate-300">
-                          Listen to explanation
-                        </p>
-
-                        <p className="mt-0.5 text-[8px] text-slate-600">
-                          Voice engine will be connected later.
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled
-                      className="rounded-lg border border-white/[0.06] px-3 py-1.5 text-[8px] text-slate-600"
-                    >
-                      Coming Soon
-                    </button>
+                    {file && (
+                      <span>
+                        Material:
+                        <span className="ml-1 text-teal-200">
+                          {file.name}
+                        </span>
+                      </span>
+                    )}
                   </div>
                 </div>
-              )}
-            </div>
+
+                <div className="whitespace-pre-wrap text-xs leading-7 text-slate-300">
+                  {explanation}
+                </div>
+              </div>
+            )}
           </section>
-        </div>
-
-        {/* =========================================================
-            FOOTER INFO
-        ========================================================== */}
-        <div className="mt-6 flex items-center justify-center gap-2 py-3">
-          <span className="h-1.5 w-1.5 rounded-full bg-teal-300/70 shadow-[0_0_8px_rgba(45,212,191,0.5)]" />
-
-          <span className="text-[8px] uppercase tracking-[0.18em] text-slate-500">
-            OFFSEDU · Local AI · Gemma · Ollama
-          </span>
         </div>
       </div>
     </div>
-  );
-}
-
-function MetaBadge({ label }) {
-  return (
-    <span className="rounded-lg border border-teal-300/10 bg-teal-400/[0.035] px-2.5 py-1.5 text-[8px] font-medium text-teal-200">
-      {label}
-    </span>
   );
 }
 
