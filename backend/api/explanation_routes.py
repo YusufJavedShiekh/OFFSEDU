@@ -19,9 +19,11 @@ def explain():
 
     topic = str(data.get("topic", "")).strip()
     document_id = data.get("document_id")
+
     language = str(
         data.get("language", "English")
     ).strip() or "English"
+
     level = str(
         data.get("level", "Simple")
     ).strip() or "Simple"
