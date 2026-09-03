@@ -22,7 +22,12 @@ class Retriever:
             vector_store_instance or vector_store
         )
 
-    def retrieve(self, query, top_k=5):
+    def retrieve(
+        self,
+        query,
+        top_k=5,
+        document_id=None,
+    ):
         """Retrieve the most relevant chunks for a query."""
 
         if not query or not query.strip():
@@ -35,6 +40,7 @@ class Retriever:
         results = self.vector_store.search(
             query_embedding=query_embedding,
             top_k=top_k,
+            document_id=document_id,
         )
 
         return self._format_results(results)

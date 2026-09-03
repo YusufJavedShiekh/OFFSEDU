@@ -88,15 +88,29 @@ class RAGPipeline:
 
         return document_ids
 
-    def retrieve(self, question, top_k=5):
+    def retrieve(
+        self,
+        question,
+        top_k=5,
+        document_id=None,
+    ):
         """Retrieve relevant document chunks."""
+
+        if not question or not question.strip():
+            raise ValueError("Question cannot be empty.")
 
         return self.retriever.retrieve(
             query=question,
             top_k=top_k,
+            document_id=document_id,
         )
 
-    def answer(self, question, top_k=5):
+    def answer(
+        self,
+        question,
+        top_k=5,
+        document_id=None,
+    ):
         """Retrieve context and generate an answer."""
 
         if not question or not question.strip():
@@ -105,6 +119,7 @@ class RAGPipeline:
         retrieved_chunks = self.retrieve(
             question=question,
             top_k=top_k,
+            document_id=document_id,
         )
 
         prompt = self.context_builder.build_prompt(

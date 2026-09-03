@@ -22,7 +22,7 @@ class RAGService:
             metadata=metadata,
         )
 
-    def search(self, query, top_k=5):
+    def search(self, query, top_k=5, document_id=None):
         """Retrieve relevant document chunks."""
 
         if not query or not query.strip():
@@ -31,9 +31,10 @@ class RAGService:
         return self.pipeline.retrieve(
             question=query,
             top_k=top_k,
+            document_id=document_id,
         )
 
-    def ask(self, question, top_k=5):
+    def ask(self, question, top_k=5, document_id=None):
         """Answer a question using retrieved document context."""
 
         if not question or not question.strip():
@@ -42,6 +43,7 @@ class RAGService:
         return self.pipeline.answer(
             question=question,
             top_k=top_k,
+            document_id=document_id,
         )
 
     def index_document(self, text, metadata=None):
