@@ -34,6 +34,16 @@ class RAGService:
             document_id=document_id,
         )
 
+    def get_document_chunks(self, document_id):
+        """Retrieve all chunks belonging to a specific document."""
+
+        if not document_id:
+            raise ValueError("Document ID is required.")
+
+        return self.pipeline.retriever.retrieve_all(
+            document_id=document_id
+        )
+
     def ask(self, question, top_k=5, document_id=None):
         """Answer a question using retrieved document context."""
 
