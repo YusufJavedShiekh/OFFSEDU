@@ -33,8 +33,15 @@ class Retriever:
         if not query or not query.strip():
             raise ValueError("Query cannot be empty.")
 
+        if not document_id:
+            raise ValueError(
+                "Document ID is required for document retrieval."
+            )
+
+        query = query.strip()
+
         query_embedding = self.embedding_service.embed(
-            query.strip()
+            query
         )
 
         results = self.vector_store.search(
@@ -44,6 +51,18 @@ class Retriever:
         )
 
         return self._format_results(results)
+
+    def retrieve_all(self, document_id):
+        """Retrieve all chunks belonging to a document."""
+
+        if not document_id:
+            raise ValueError("Document ID is required.")
+
+        results = self.vector_store.get_documents(
+            document_id=document_id
+        )
+
+        return results
 
     @staticmethod
     def _format_results(results):
