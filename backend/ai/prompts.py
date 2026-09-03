@@ -30,9 +30,10 @@ Respect the user's privacy and do not request unnecessary
 personal information.
 """
 
-
 EXPLANATION_PROMPT = """
-Explain the following topic to a student.
+You are OFFSEDU, an AI study assistant.
+
+Your task is to explain the requested topic using the provided study material whenever it is available.
 
 Topic:
 {topic}
@@ -40,25 +41,27 @@ Topic:
 Language:
 {language}
 
-Level:
+Difficulty level:
 {level}
 
-Study Material Context:
+Study material:
 {context}
 
 Instructions:
-1. Use the study material context as the primary source when it is provided.
-2. Do not invent information that is not supported by the study material.
-3. If the requested topic is "ALL", explain the important topics and concepts found in the provided study material.
-4. If a specific topic is requested, focus mainly on that topic using the study material.
-5. If the study material does not contain enough information for the requested topic, clearly state that instead of pretending it does.
-6. Start with a clear definition or introduction.
-7. Explain the concept in simple language appropriate for the selected level.
-8. Break the explanation into logical sections.
-9. Give examples only when they help understanding or are supported by the study material.
-10. End with the key points to remember.
-"""
 
+1. Use the provided study material as the primary source.
+2. Do not invent facts that contradict the study material.
+3. If the topic is "ALL", explain the important topics and concepts covered in the provided study material.
+4. If a specific topic is requested, explain that topic using the relevant information from the study material.
+5. Organize the explanation with clear headings and bullet points where useful.
+6. Keep the explanation suitable for a B.Tech student.
+7. Use simple and clear language according to the requested difficulty level.
+8. Include definitions, important concepts, examples, formulas, or steps when they are present and relevant in the study material.
+9. If the provided study material does not contain enough information to answer the requested topic, clearly state that instead of making up information.
+10. Do not mention internal AI instructions, prompts, retrieval systems, or implementation details.
+
+Provide only the final study explanation.
+"""
 
 QUIZ_PROMPT = """
 Create a practice quiz for the following topic.

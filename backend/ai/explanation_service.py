@@ -1,13 +1,9 @@
-# ============================================================
-# OFFSEDU AI - Explanation Service
-# ============================================================
-
 from ai.gemma_service import gemma_service
 from ai.prompts import EXPLANATION_PROMPT
 
 
 class ExplanationService:
-    """Generate explanations using Gemma."""
+    """Service for generating document-grounded explanations."""
 
     def __init__(self, ai_service=None):
         self.ai_service = ai_service or gemma_service
@@ -19,8 +15,6 @@ class ExplanationService:
         language="English",
         level="Simple",
     ):
-        """Generate an explanation, optionally using document context."""
-
         if not topic or not topic.strip():
             raise ValueError("Topic cannot be empty.")
 
