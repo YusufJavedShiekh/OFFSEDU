@@ -3,6 +3,7 @@
 # ============================================================
 
 import requests
+from sqlalchemy import text
 
 from config import OLLAMA_URL
 
@@ -25,10 +26,10 @@ class EmbeddingService:
             raise ValueError("Text cannot be empty.")
 
         response = requests.post(
-            f"{self.base_url}/api/embeddings",
+            f"{self.base_url}/api/embed",
             json={
                 "model": self.model,
-                "prompt": text.strip(),
+                "input": text.strip(),
             },
             timeout=120,
         )
@@ -37,14 +38,14 @@ class EmbeddingService:
 
         data = response.json()
 
-        embedding = data.get("embedding")
+        embeddings = data.get("embeddings")
 
-        if not embedding:
+        if not embeddings:
             raise RuntimeError(
                 "Ollama did not return an embedding."
             )
 
-        return embedding
+        return embeddings[0]
 
     def embed_many(self, texts):
         """Create embeddings for multiple text chunks."""

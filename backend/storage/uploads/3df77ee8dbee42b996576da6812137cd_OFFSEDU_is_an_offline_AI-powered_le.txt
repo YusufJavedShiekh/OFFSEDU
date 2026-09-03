@@ -1,0 +1,2 @@
+OFFSEDU is an offline AI-powered learning platform.
+It uses document processing and Retrieval-Augmented Generation.

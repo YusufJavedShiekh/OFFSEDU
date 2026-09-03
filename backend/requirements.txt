@@ -3,3 +3,32 @@ flask-cors
 SQLAlchemy
 python-dotenv
 requests
+
+# RAG / Vector Database
+
+chromadb
+
+# Document Processing
+
+PyPDF2
+pypdf
+python-docx
+python-pptx
+
+# Image Processing
+
+Pillow
+
+# PDF Generation
+
+reportlab
+
+# OCR
+
+pytesseract
+
+# Voice
+
+SpeechRecognition
+pyttsx3
+pydub

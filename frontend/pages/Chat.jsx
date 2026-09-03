@@ -1,3 +1,4 @@
+import { sendMessage as sendChatMessage } from "../services/chatService";
 import {
   Bot,
   FileText,
@@ -38,7 +39,7 @@ function Chat() {
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
 
-  const sendMessage = (messageText = input) => {
+  const sendMessage = async (messageText = input) => {
     const text = messageText.trim();
 
     if (!text || isTyping) {
@@ -62,16 +63,32 @@ function Chat() {
     setAttachedFile(null);
     setIsTyping(true);
 
-    setTimeout(() => {
+    try {
+      const result = await sendChatMessage(text);
+
       const aiMessage = {
         id: Date.now() + 1,
         role: "assistant",
-        text: generateResponse(text),
+        text:
+          result.response ||
+          "I couldn't generate a response.",
       };
 
       setMessages((previous) => [...previous, aiMessage]);
+    } catch (error) {
+      const aiMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        text:
+          error.response?.data?.error ||
+          error.message ||
+          "Unable to connect to the OFFSEDU backend.",
+      };
+
+      setMessages((previous) => [...previous, aiMessage]);
+    } finally {
       setIsTyping(false);
-    }, 900);
+    }
   };
 
   const handleSubmit = (event) => {

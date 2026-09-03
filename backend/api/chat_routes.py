@@ -2,12 +2,35 @@ from flask import Blueprint, jsonify, request
 
 from ai.chat_service import chat_service
 
-
 chat_bp = Blueprint(
     "chat",
     __name__,
     url_prefix="/api/chat"
 )
+
+# ChromaDB cosine distance: lower = more similar.
+# This prevents weak/unrelated document matches from forcing RAG mode.
+RAG_DISTANCE_THRESHOLD = 0.65
+
+
+def _has_relevant_sources(sources):
+    """Return True when at least one retrieved chunk is sufficiently relevant."""
+    if not sources:
+        return False
+
+    for source in sources:
+        distance = source.get("distance")
+
+        if distance is None:
+            continue
+
+        try:
+            if float(distance) <= RAG_DISTANCE_THRESHOLD:
+                return True
+        except (TypeError, ValueError):
+            continue
+
+    return False
 
 
 @chat_bp.route("/", methods=["POST"])
@@ -15,7 +38,6 @@ def chat():
     """Handle student chat requests."""
 
     data = request.get_json(silent=True) or {}
-
     message = data.get("message", "").strip()
 
     if not message:
@@ -25,10 +47,7 @@ def chat():
         }), 400
 
     try:
-        # ----------------------------------------------------
-        # Try RAG first
-        # ----------------------------------------------------
-
+        # Try RAG first.
         try:
             from rag.rag_service import rag_service
 
@@ -37,24 +56,23 @@ def chat():
                 top_k=5
             )
 
-            if result.get("sources"):
+            sources = result.get("sources", [])
+
+            # Only use RAG when the retrieved context is actually relevant.
+            if _has_relevant_sources(sources):
                 return jsonify({
                     "success": True,
                     "message": message,
                     "response": result.get("answer", ""),
-                    "sources": result.get("sources", []),
+                    "sources": sources,
                     "rag_used": True
                 })
 
         except Exception:
-            # RAG may not be available until its dependencies
-            # and document knowledge base are configured.
+            # RAG failure should not prevent normal AI chat.
             pass
 
-        # ----------------------------------------------------
-        # Normal AI chat fallback
-        # ----------------------------------------------------
-
+        # Fall back to normal Gemma chat.
         response = chat_service.chat(message)
 
         return jsonify({

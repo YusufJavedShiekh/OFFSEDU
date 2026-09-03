@@ -1,3 +1,7 @@
+import {
+  getDocuments,
+  uploadDocument,
+} from "../services/documentService";
 import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
@@ -82,6 +86,7 @@ function formatFileSize(bytes) {
 function Documents() {
   const [subjects, setSubjects] = useState([]);
   const [activeSubjectId, setActiveSubjectId] = useState(null);
+  const [subjectsLoaded, setSubjectsLoaded] = useState(false);
 
   const [showAddSubject, setShowAddSubject] = useState(false);
   const [subjectName, setSubjectName] = useState("");
@@ -107,12 +112,39 @@ function Documents() {
       }
     } catch {
       setSubjects([]);
+    } finally {
+      setSubjectsLoaded(true);
     }
   }, []);
 
   useEffect(() => {
+  const loadBackendDocuments = async () => {
+    try {
+      const result = await getDocuments();
+
+      if (!result.success || !Array.isArray(result.documents)) {
+        return;
+      }
+
+      console.log("Backend documents:", result.documents);
+    } catch (error) {
+      console.error(
+        "Unable to load backend documents:",
+        error,
+      );
+    }
+  };
+
+  loadBackendDocuments();
+}, []);
+
+  useEffect(() => {
+    if (!subjectsLoaded) {
+      return;
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(subjects));
-  }, [subjects]);
+  }, [subjects, subjectsLoaded]);
 
   const activeSubject = subjects.find(
     (subject) => subject.id === activeSubjectId,
@@ -185,7 +217,7 @@ function Documents() {
     setSelectedFile(file);
   };
 
-  const uploadMaterial = () => {
+  const uploadMaterial = async () => {
     if (!activeSubjectId) {
       alert("Please open a subject first.");
       return;
@@ -196,15 +228,30 @@ function Documents() {
       return;
     }
 
-    const fileUrl = URL.createObjectURL(selectedFile);
+    let result;
+
+    try {
+      result = await uploadDocument(selectedFile);
+
+      if (!result.success) {
+        throw new Error(result.error || "Upload failed.");
+      }
+    } catch (error) {
+      alert(
+        error.response?.data?.error ||
+          error.message ||
+          "Unable to upload the document.",
+      );
+      return;
+    }
 
     const newFile = {
-      id: Date.now(),
+      id: result.document_id || Date.now(),
       name: selectedFile.name,
       size: selectedFile.size,
       type: selectedFile.type,
       extension: getFileExtension(selectedFile.name),
-      url: fileUrl,
+      storedFilename: result.stored_filename,
       uploadedAt: new Date().toISOString(),
     };
 
@@ -254,14 +301,26 @@ function Documents() {
     }
   };
 
+const getFileUrl = (file) => {
+  if (!file?.storedFilename) {
+    return null;
+  }
+
+  return `http://127.0.0.1:5000/api/documents/file/${encodeURIComponent(
+    file.storedFilename,
+  )}`;
+};
+
   const downloadFile = (file) => {
-    if (!file?.url) {
-      alert("This file is no longer available in the current browser session.");
+    const fileUrl = getFileUrl(file);
+
+    if (!fileUrl) {
+      alert("This file is not available.");
       return;
     }
 
     const link = document.createElement("a");
-    link.href = file.url;
+    link.href = fileUrl;
     link.download = file.name;
     document.body.appendChild(link);
     link.click();
@@ -770,20 +829,20 @@ function Documents() {
               {[".jpg", ".jpeg", ".png"].includes(previewFile.extension) ? (
                 <div className="flex h-full items-center justify-center overflow-auto rounded-2xl border border-white/10 bg-black/30 p-4">
                   <img
-                    src={previewFile.url}
+                    src={getFileUrl(previewFile)}
                     alt={previewFile.name}
                     className="max-h-full max-w-full rounded-xl object-contain"
                   />
                 </div>
               ) : previewFile.extension === ".pdf" ? (
                 <iframe
-                  src={previewFile.url}
+                  src={getFileUrl(previewFile)}
                   title={previewFile.name}
                   className="h-full w-full rounded-2xl border border-white/10 bg-white"
                 />
               ) : previewFile.extension === ".txt" ? (
                 <iframe
-                  src={previewFile.url}
+                  src={getFileUrl(previewFile)}
                   title={previewFile.name}
                   className="h-full w-full rounded-2xl border border-white/10 bg-white"
                 />
