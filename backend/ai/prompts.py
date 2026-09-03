@@ -37,12 +37,26 @@ Explain the following topic to a student.
 Topic:
 {topic}
 
-Requirements:
-1. Start with a clear definition.
-2. Explain the concept in simple language.
-3. Break the explanation into logical parts.
-4. Give an example if useful.
-5. End with the key points to remember.
+Language:
+{language}
+
+Level:
+{level}
+
+Study Material Context:
+{context}
+
+Instructions:
+1. Use the study material context as the primary source when it is provided.
+2. Do not invent information that is not supported by the study material.
+3. If the requested topic is "ALL", explain the important topics and concepts found in the provided study material.
+4. If a specific topic is requested, focus mainly on that topic using the study material.
+5. If the study material does not contain enough information for the requested topic, clearly state that instead of pretending it does.
+6. Start with a clear definition or introduction.
+7. Explain the concept in simple language appropriate for the selected level.
+8. Break the explanation into logical sections.
+9. Give examples only when they help understanding or are supported by the study material.
+10. End with the key points to remember.
 """
 
 

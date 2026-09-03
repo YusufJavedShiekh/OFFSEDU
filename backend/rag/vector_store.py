@@ -59,8 +59,13 @@ class VectorStore:
             metadatas=metadatas,
         )
 
-    def search(self, query_embedding, top_k=5):
-        """Find the most relevant document chunks."""
+    def search(
+        self,
+        query_embedding,
+        top_k=5,
+        document_id=None,
+    ):
+        """Find relevant document chunks."""
 
         if not query_embedding:
             raise ValueError("Query embedding cannot be empty.")
@@ -68,10 +73,55 @@ class VectorStore:
         if top_k < 1:
             raise ValueError("top_k must be at least 1.")
 
-        return self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+        }
+
+        if document_id:
+            query_kwargs["where"] = {
+                "document_id": str(document_id),
+            }
+
+        return self.collection.query(**query_kwargs)
+
+    def get_documents(self, document_id):
+        """Get all chunks belonging to a specific document."""
+
+        if document_id is None:
+            raise ValueError("Document ID is required.")
+
+        results = self.collection.get(
+            where={
+                "document_id": str(document_id),
+            },
+            include=["documents", "metadatas"],
         )
+
+        documents = results.get("documents") or []
+        metadatas = results.get("metadatas") or []
+        ids = results.get("ids") or []
+
+        formatted = []
+
+        for index, document in enumerate(documents):
+            formatted.append({
+                "id": ids[index] if index < len(ids) else None,
+                "document": document,
+                "metadata": (
+                    metadatas[index]
+                    if index < len(metadatas)
+                    else {}
+                ),
+            })
+
+        formatted.sort(
+            key=lambda item: (
+                item.get("metadata", {}).get("chunk_index", 0)
+            )
+        )
+
+        return formatted
 
     def delete(self, ids):
         """Delete document chunks by their IDs."""
