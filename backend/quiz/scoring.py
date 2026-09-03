@@ -20,6 +20,8 @@ This module does NOT:
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Mapping, Optional
@@ -90,55 +92,58 @@ class MarkingScheme:
     """
 
     marks_per_question: float = 1.0
-
     negative_marks: float = 0.0
-
     unanswered_marks: float = 0.0
-
     allow_partial_marks: bool = False
 
     def __post_init__(self) -> None:
-
         try:
             self.marks_per_question = float(
                 self.marks_per_question
             )
-
             self.negative_marks = float(
                 self.negative_marks
             )
-
             self.unanswered_marks = float(
                 self.unanswered_marks
             )
-
-        except (
-            TypeError,
-            ValueError,
-        ) as exc:
-
+        except (TypeError, ValueError) as exc:
             raise InvalidScoringConfigurationError(
                 "Marks must be numeric values."
             ) from exc
 
-        if self.marks_per_question < 0:
-            raise InvalidScoringConfigurationError(
-                "marks_per_question cannot be negative."
+        values = {
+            "marks_per_question": self.marks_per_question,
+            "negative_marks": self.negative_marks,
+            "unanswered_marks": self.unanswered_marks,
+        }
+
+        for name, value in values.items():
+
+            if not math.isfinite(value):
+                raise InvalidScoringConfigurationError(
+                    f"{name} must be a finite number."
+                )
+
+            if value < 0:
+                raise InvalidScoringConfigurationError(
+                    f"{name} cannot be negative."
+                )
+
+        if not isinstance(
+            self.allow_partial_marks,
+            bool,
+        ):
+            normalized = normalize_boolean(
+                self.allow_partial_marks
             )
 
-        if self.negative_marks < 0:
-            raise InvalidScoringConfigurationError(
-                "negative_marks cannot be negative."
-            )
+            if normalized is None:
+                raise InvalidScoringConfigurationError(
+                    "allow_partial_marks must be a boolean."
+                )
 
-        if self.unanswered_marks < 0:
-            raise InvalidScoringConfigurationError(
-                "unanswered_marks cannot be negative."
-            )
-
-        self.allow_partial_marks = bool(
-            self.allow_partial_marks
-        )
+            self.allow_partial_marks = normalized
 
     @classmethod
     def from_configuration(
@@ -146,6 +151,29 @@ class MarkingScheme:
         configuration: QuizConfiguration,
     ) -> "MarkingScheme":
         """Create a marking scheme from QuizConfiguration."""
+
+        if not isinstance(
+            configuration,
+            QuizConfiguration,
+        ):
+            if not isinstance(
+                configuration,
+                Mapping,
+            ):
+                raise InvalidScoringConfigurationError(
+                    "Invalid quiz configuration."
+                )
+
+            try:
+                configuration = (
+                    QuizConfiguration.from_dict(
+                        configuration
+                    )
+                )
+            except Exception as exc:
+                raise InvalidScoringConfigurationError(
+                    "Invalid quiz configuration."
+                ) from exc
 
         return cls(
             marks_per_question=(
@@ -169,23 +197,14 @@ class QuestionScore:
     """Stores the scoring result for one question."""
 
     question_id: str
-
     question_type: QuestionType
-
     student_answer: Any
-
     correct_answer: Any
-
     status: AnswerStatus
-
     marks_obtained: float
-
     maximum_marks: float
-
     explanation: Optional[str] = None
-
     difficulty: Optional[Difficulty] = None
-
     metadata: Dict[str, Any] = field(
         default_factory=dict
     )
@@ -199,6 +218,8 @@ class QuestionScore:
         return self.status != AnswerStatus.UNANSWERED
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert score into an API-friendly dictionary."""
+
         return {
             "question_id": self.question_id,
             "question_type": (
@@ -207,23 +228,13 @@ class QuestionScore:
                     self.question_type,
                     QuestionType,
                 )
-                else str(
-                    self.question_type
-                )
+                else str(self.question_type)
             ),
-            "student_answer": (
-                self.student_answer
-            ),
-            "correct_answer": (
-                self.correct_answer
-            ),
+            "student_answer": self.student_answer,
+            "correct_answer": self.correct_answer,
             "status": self.status.value,
-            "marks_obtained": (
-                self.marks_obtained
-            ),
-            "maximum_marks": (
-                self.maximum_marks
-            ),
+            "marks_obtained": self.marks_obtained,
+            "maximum_marks": self.maximum_marks,
             "explanation": self.explanation,
             "difficulty": (
                 self.difficulty.value
@@ -233,9 +244,7 @@ class QuestionScore:
                 )
                 else self.difficulty
             ),
-            "metadata": dict(
-                self.metadata
-            ),
+            "metadata": dict(self.metadata),
         }
 
 
@@ -248,36 +257,24 @@ class QuizScore:
     """Complete score for a quiz."""
 
     total_questions: int
-
     attempted: int
-
     correct: int
-
     wrong: int
-
     partial: int
-
     unanswered: int
-
     total_marks: float
-
     obtained_marks: float
-
     percentage: float
-
     accuracy: float
-
-    question_scores: List[
-        QuestionScore
-    ] = field(
+    question_scores: List[QuestionScore] = field(
         default_factory=list
     )
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert quiz score into an API-friendly dictionary."""
+
         return {
-            "total_questions": (
-                self.total_questions
-            ),
+            "total_questions": self.total_questions,
             "attempted": self.attempted,
             "correct": self.correct,
             "wrong": self.wrong,
@@ -289,8 +286,7 @@ class QuizScore:
             "accuracy": self.accuracy,
             "question_scores": [
                 score.to_dict()
-                for score
-                in self.question_scores
+                for score in self.question_scores
             ],
         }
 
@@ -317,15 +313,21 @@ class ScoringEngine:
 
     def __init__(
         self,
-        marking_scheme: Optional[
-            MarkingScheme
-        ] = None,
+        marking_scheme: Optional[MarkingScheme] = None,
     ) -> None:
 
-        self.marking_scheme = (
-            marking_scheme
-            or MarkingScheme()
-        )
+        if marking_scheme is None:
+            marking_scheme = MarkingScheme()
+
+        if not isinstance(
+            marking_scheme,
+            MarkingScheme,
+        ):
+            raise InvalidScoringConfigurationError(
+                "marking_scheme must be a MarkingScheme."
+            )
+
+        self.marking_scheme = marking_scheme
 
         self._subjective_evaluators: Dict[
             QuestionType,
@@ -350,25 +352,24 @@ class ScoringEngine:
         """
         Register an evaluator for subjective questions.
 
-        The evaluator must return marks obtained or None.
+        The evaluator must return:
+        - numeric marks, or
+        - None when manual evaluation is required.
         """
 
         try:
             question_type = QuestionType(
                 question_type
             )
-        except ValueError as exc:
-
+        except (ValueError, TypeError) as exc:
             raise UnsupportedQuestionTypeError(
-                f"Invalid question type: "
-                f"{question_type}"
+                f"Invalid question type: {question_type}"
             ) from exc
 
         if question_type not in {
             QuestionType.SHORT_ANSWER,
             QuestionType.LONG_ANSWER,
         }:
-
             raise UnsupportedQuestionTypeError(
                 "Subjective evaluator can only be "
                 "registered for short or long answers."
@@ -392,74 +393,70 @@ class ScoringEngine:
         question: Question,
         student_answer: Any = None,
         maximum_marks: Optional[float] = None,
+        marking_scheme: Optional[MarkingScheme] = None,
     ) -> QuestionScore:
         """
         Score one question.
 
         Args:
             question:
-                Question object.
+                Question object or dictionary.
 
             student_answer:
                 Student's answer.
 
             maximum_marks:
                 Optional custom maximum marks.
+
+            marking_scheme:
+                Optional marking scheme for this question.
         """
 
+        # ----------------------------------------------------
+        # Normalize question.
+        # ----------------------------------------------------
+
+        question = self._normalize_question(
+            question
+        )
+
+        # ----------------------------------------------------
+        # Determine marking scheme.
+        # ----------------------------------------------------
+
+        scheme = (
+            marking_scheme
+            if marking_scheme is not None
+            else self.marking_scheme
+        )
+
         if not isinstance(
-            question,
-            Question,
+            scheme,
+            MarkingScheme,
         ):
-
-            if isinstance(
-                question,
-                Mapping,
-            ):
-
-                question = Question.from_dict(
-                    question
-                )
-
-            else:
-
-                raise InvalidAnswerError(
-                    "Invalid Question object."
-                )
-
-        if maximum_marks is None:
-
-            maximum_marks = float(
-                question.marks
-            )
-
-        try:
-            maximum_marks = float(
-                maximum_marks
-            )
-
-        except (
-            TypeError,
-            ValueError,
-        ) as exc:
-
-            raise ScoringError(
-                "Maximum marks must be numeric."
-            ) from exc
-
-        if maximum_marks < 0:
-            raise ScoringError(
-                "Maximum marks cannot be negative."
+            raise InvalidScoringConfigurationError(
+                "Invalid marking scheme."
             )
 
         # ----------------------------------------------------
-        # Unanswered
+        # Determine maximum marks.
+        # ----------------------------------------------------
+
+        if maximum_marks is None:
+            maximum_marks = question.marks
+
+        maximum_marks = self._validate_marks(
+            maximum_marks,
+            "Maximum marks",
+        )
+
+        # ----------------------------------------------------
+        # Unanswered.
         # ----------------------------------------------------
 
         if self._is_unanswered(
             student_answer
         ):
-
             return QuestionScore(
                 question_id=question.id,
                 question_type=question.type,
@@ -467,27 +464,30 @@ class ScoringEngine:
                 correct_answer=(
                     question.correct_answer
                 ),
-                status=(
-                    AnswerStatus.UNANSWERED
-                ),
-                marks_obtained=(
-                    self.marking_scheme
-                    .unanswered_marks
+                status=AnswerStatus.UNANSWERED,
+                marks_obtained=min(
+                    scheme.unanswered_marks,
+                    maximum_marks,
                 ),
                 maximum_marks=maximum_marks,
-                explanation=(
-                    question.explanation
-                ),
-                difficulty=(
-                    question.difficulty
-                ),
+                explanation=question.explanation,
+                difficulty=question.difficulty,
                 metadata=dict(
                     question.metadata
                 ),
             )
 
         # ----------------------------------------------------
-        # MCQ
+        # Validate objective answer.
+        # ----------------------------------------------------
+
+        student_answer = self._normalize_student_answer(
+            question,
+            student_answer,
+        )
+
+        # ----------------------------------------------------
+        # MCQ.
         # ----------------------------------------------------
 
         if question.type == QuestionType.MCQ:
@@ -496,56 +496,50 @@ class ScoringEngine:
                 question,
                 student_answer,
                 maximum_marks,
+                scheme,
             )
 
         # ----------------------------------------------------
-        # TRUE/FALSE
+        # TRUE/FALSE.
         # ----------------------------------------------------
 
-        if (
-            question.type
-            == QuestionType.TRUE_FALSE
-        ):
+        if question.type == QuestionType.TRUE_FALSE:
 
             return self._score_true_false(
                 question,
                 student_answer,
                 maximum_marks,
+                scheme,
             )
 
         # ----------------------------------------------------
-        # SHORT ANSWER
+        # SHORT ANSWER.
         # ----------------------------------------------------
 
-        if (
-            question.type
-            == QuestionType.SHORT_ANSWER
-        ):
+        if question.type == QuestionType.SHORT_ANSWER:
 
             return self._score_subjective(
                 question,
                 student_answer,
                 maximum_marks,
+                scheme,
             )
 
         # ----------------------------------------------------
-        # LONG ANSWER
+        # LONG ANSWER.
         # ----------------------------------------------------
 
-        if (
-            question.type
-            == QuestionType.LONG_ANSWER
-        ):
+        if question.type == QuestionType.LONG_ANSWER:
 
             return self._score_subjective(
                 question,
                 student_answer,
                 maximum_marks,
+                scheme,
             )
 
         raise UnsupportedQuestionTypeError(
-            f"Unsupported question type: "
-            f"{question.type}"
+            f"Unsupported question type: {question.type}"
         )
 
     # ========================================================
@@ -557,7 +551,9 @@ class ScoringEngine:
         question: Question,
         student_answer: Any,
         maximum_marks: float,
+        marking_scheme: MarkingScheme,
     ) -> QuestionScore:
+        """Score a multiple-choice question."""
 
         correct = self._answers_equal(
             student_answer,
@@ -566,17 +562,12 @@ class ScoringEngine:
         )
 
         if correct:
-
             status = AnswerStatus.CORRECT
-
             marks = maximum_marks
-
         else:
-
             status = AnswerStatus.WRONG
-
             marks = -min(
-                self.marking_scheme.negative_marks,
+                marking_scheme.negative_marks,
                 maximum_marks,
             )
 
@@ -584,18 +575,12 @@ class ScoringEngine:
             question_id=question.id,
             question_type=question.type,
             student_answer=student_answer,
-            correct_answer=(
-                question.correct_answer
-            ),
+            correct_answer=question.correct_answer,
             status=status,
             marks_obtained=marks,
             maximum_marks=maximum_marks,
-            explanation=(
-                question.explanation
-            ),
-            difficulty=(
-                question.difficulty
-            ),
+            explanation=question.explanation,
+            difficulty=question.difficulty,
             metadata=dict(
                 question.metadata
             ),
@@ -610,7 +595,9 @@ class ScoringEngine:
         question: Question,
         student_answer: Any,
         maximum_marks: float,
+        marking_scheme: MarkingScheme,
     ) -> QuestionScore:
+        """Score a True/False question."""
 
         student_value = self._normalize_true_false(
             student_answer
@@ -621,14 +608,12 @@ class ScoringEngine:
         )
 
         if student_value is None:
-
             raise InvalidAnswerError(
                 f"Invalid True/False answer for "
                 f"question {question.id}."
             )
 
         if correct_value is None:
-
             raise InvalidAnswerError(
                 f"Invalid correct answer for "
                 f"question {question.id}."
@@ -639,34 +624,33 @@ class ScoringEngine:
         )
 
         if correct:
-
             status = AnswerStatus.CORRECT
-
             marks = maximum_marks
-
         else:
-
             status = AnswerStatus.WRONG
-
             marks = -min(
-                self.marking_scheme.negative_marks,
+                marking_scheme.negative_marks,
                 maximum_marks,
             )
 
         return QuestionScore(
             question_id=question.id,
             question_type=question.type,
-            student_answer=student_value,
-            correct_answer=correct_value,
+            student_answer=(
+                "True"
+                if student_value
+                else "False"
+            ),
+            correct_answer=(
+                "True"
+                if correct_value
+                else "False"
+            ),
             status=status,
             marks_obtained=marks,
             maximum_marks=maximum_marks,
-            explanation=(
-                question.explanation
-            ),
-            difficulty=(
-                question.difficulty
-            ),
+            explanation=question.explanation,
+            difficulty=question.difficulty,
             metadata=dict(
                 question.metadata
             ),
@@ -681,17 +665,27 @@ class ScoringEngine:
         question: Question,
         student_answer: Any,
         maximum_marks: float,
+        marking_scheme: MarkingScheme,
     ) -> QuestionScore:
         """
         Score short/long answers.
 
-        If no evaluator is registered, the question remains
-        unanswered from an automatic-scoring perspective.
+        If no evaluator is registered, the answer is marked as
+        requiring manual evaluation.
 
-        An external evaluator may return:
-            0                    -> WRONG
-            0 < marks < maximum  -> PARTIAL
-            maximum              -> CORRECT
+        An evaluator may return:
+
+            None
+                -> manual evaluation required
+
+            0
+                -> WRONG
+
+            0 < marks < maximum
+                -> PARTIAL when partial marks are enabled
+
+            maximum
+                -> CORRECT
         """
 
         evaluator = (
@@ -700,7 +694,19 @@ class ScoringEngine:
             )
         )
 
+        base_metadata = dict(
+            question.metadata
+        )
+
+        # ----------------------------------------------------
+        # No evaluator.
+        # ----------------------------------------------------
+
         if evaluator is None:
+
+            base_metadata[
+                "requires_manual_evaluation"
+            ] = True
 
             return QuestionScore(
                 question_id=question.id,
@@ -709,41 +715,38 @@ class ScoringEngine:
                 correct_answer=(
                     question.correct_answer
                 ),
-                status=(
-                    AnswerStatus.PARTIAL
-                    if self.marking_scheme
-                    .allow_partial_marks
-                    else AnswerStatus.WRONG
-                ),
+                status=AnswerStatus.UNANSWERED,
                 marks_obtained=0.0,
                 maximum_marks=maximum_marks,
-                explanation=(
-                    question.explanation
-                ),
-                difficulty=(
-                    question.difficulty
-                ),
-                metadata={
-                    **question.metadata,
-                    "requires_manual_evaluation": True,
-                },
+                explanation=question.explanation,
+                difficulty=question.difficulty,
+                metadata=base_metadata,
             )
 
-        try:
+        # ----------------------------------------------------
+        # Run evaluator.
+        # ----------------------------------------------------
 
+        try:
             marks = evaluator(
                 question,
                 student_answer,
             )
-
         except Exception as exc:
-
             raise ScoringError(
                 f"Subjective evaluation failed for "
                 f"question {question.id}."
             ) from exc
 
+        # ----------------------------------------------------
+        # Evaluator requires manual evaluation.
+        # ----------------------------------------------------
+
         if marks is None:
+
+            base_metadata[
+                "requires_manual_evaluation"
+            ] = True
 
             return QuestionScore(
                 question_id=question.id,
@@ -752,35 +755,36 @@ class ScoringEngine:
                 correct_answer=(
                     question.correct_answer
                 ),
-                status=AnswerStatus.PARTIAL,
+                status=AnswerStatus.UNANSWERED,
                 marks_obtained=0.0,
                 maximum_marks=maximum_marks,
-                explanation=(
-                    question.explanation
-                ),
-                difficulty=(
-                    question.difficulty
-                ),
-                metadata={
-                    **question.metadata,
-                    "requires_manual_evaluation": True,
-                },
+                explanation=question.explanation,
+                difficulty=question.difficulty,
+                metadata=base_metadata,
             )
+
+        # ----------------------------------------------------
+        # Validate evaluator result.
+        # ----------------------------------------------------
 
         try:
             marks = float(marks)
-
-        except (
-            TypeError,
-            ValueError,
-        ) as exc:
-
+        except (TypeError, ValueError) as exc:
             raise ScoringError(
                 "Subjective evaluator must return "
                 "a numeric mark or None."
             ) from exc
 
+        if not math.isfinite(marks):
+            raise ScoringError(
+                "Subjective evaluator returned "
+                "a non-finite mark."
+            )
+
+        # ----------------------------------------------------
         # Keep marks within valid range.
+        # ----------------------------------------------------
+
         marks = max(
             0.0,
             min(
@@ -789,37 +793,40 @@ class ScoringEngine:
             ),
         )
 
+        # ----------------------------------------------------
+        # Determine status.
+        # ----------------------------------------------------
+
         if marks >= maximum_marks:
 
             status = AnswerStatus.CORRECT
+            marks = maximum_marks
 
         elif marks > 0:
 
-            status = AnswerStatus.PARTIAL
+            if marking_scheme.allow_partial_marks:
+                status = AnswerStatus.PARTIAL
+
+            else:
+                marks = 0.0
+                status = AnswerStatus.WRONG
 
         else:
 
             status = AnswerStatus.WRONG
+            marks = 0.0
 
         return QuestionScore(
             question_id=question.id,
             question_type=question.type,
             student_answer=student_answer,
-            correct_answer=(
-                question.correct_answer
-            ),
+            correct_answer=question.correct_answer,
             status=status,
             marks_obtained=marks,
             maximum_marks=maximum_marks,
-            explanation=(
-                question.explanation
-            ),
-            difficulty=(
-                question.difficulty
-            ),
-            metadata=dict(
-                question.metadata
-            ),
+            explanation=question.explanation,
+            difficulty=question.difficulty,
+            metadata=base_metadata,
         )
 
     # ========================================================
@@ -841,7 +848,7 @@ class ScoringEngine:
 
         Args:
             questions:
-                List of Question objects.
+                List of Question objects or dictionaries.
 
             answers:
                 Mapping of question ID -> student answer.
@@ -850,42 +857,39 @@ class ScoringEngine:
                 Optional quiz configuration.
         """
 
-        if not questions:
+        if not isinstance(
+            questions,
+            (list, tuple),
+        ):
+            raise ScoringError(
+                "questions must be a list or tuple."
+            )
 
+        if not questions:
             raise ScoringError(
                 "Cannot score an empty quiz."
             )
 
-        answers = answers or {}
+        if answers is None:
+            answers = {}
+
+        if not isinstance(
+            answers,
+            Mapping,
+        ):
+            raise ScoringError(
+                "answers must be a dictionary or mapping."
+            )
 
         # ----------------------------------------------------
         # Build marking scheme.
         # ----------------------------------------------------
 
-        if configuration is not None:
-
-            if not isinstance(
-                configuration,
-                QuizConfiguration,
-            ):
-
-                configuration = (
-                    QuizConfiguration.from_dict(
-                        configuration
-                    )
-                )
-
-            marking_scheme = (
-                MarkingScheme.from_configuration(
-                    configuration
-                )
+        marking_scheme = (
+            self._build_marking_scheme(
+                configuration
             )
-
-        else:
-
-            marking_scheme = (
-                self.marking_scheme
-            )
+        )
 
         # ----------------------------------------------------
         # Score each question.
@@ -895,37 +899,41 @@ class ScoringEngine:
             QuestionScore
         ] = []
 
-        for question in questions:
+        seen_question_ids = set()
 
-            if not isinstance(
-                question,
-                Question,
-            ):
+        for raw_question in questions:
 
-                if isinstance(
-                    question,
-                    Mapping,
-                ):
-
-                    question = (
-                        Question.from_dict(
-                            question
-                        )
-                    )
-
-                else:
-
-                    raise ScoringError(
-                        "Invalid question in quiz."
-                    )
-
-            student_answer = answers.get(
-                question.id
+            question = self._normalize_question(
+                raw_question
             )
 
-            score = self._score_with_scheme(
+            question_id = str(
+                question.id
+            ).strip()
+
+            if not question_id:
+                raise ScoringError(
+                    "Question ID cannot be empty."
+                )
+
+            if question_id in seen_question_ids:
+                raise ScoringError(
+                    f"Duplicate question ID: "
+                    f"{question_id}"
+                )
+
+            seen_question_ids.add(
+                question_id
+            )
+
+            student_answer = answers.get(
+                question_id
+            )
+
+            score = self.score_question(
                 question=question,
                 student_answer=student_answer,
+                maximum_marks=question.marks,
                 marking_scheme=marking_scheme,
             )
 
@@ -986,8 +994,10 @@ class ScoringEngine:
             for score in question_scores
         )
 
-        # Prevent negative total score from producing
-        # a negative percentage.
+        # ----------------------------------------------------
+        # Percentage.
+        # ----------------------------------------------------
+
         percentage = 0.0
 
         if total_marks > 0:
@@ -997,6 +1007,9 @@ class ScoringEngine:
                 / total_marks
             ) * 100
 
+            # Negative marking can produce a negative
+            # raw score. For a percentage displayed to
+            # students, keep it within 0-100.
             percentage = max(
                 0.0,
                 min(
@@ -1004,6 +1017,10 @@ class ScoringEngine:
                     100.0,
                 ),
             )
+
+        # ----------------------------------------------------
+        # Accuracy.
+        # ----------------------------------------------------
 
         accuracy = 0.0
 
@@ -1037,76 +1054,204 @@ class ScoringEngine:
                 accuracy,
                 2,
             ),
-            question_scores=(
-                question_scores
-            ),
+            question_scores=question_scores,
         )
 
     # ========================================================
-    # SCORE USING SPECIFIC MARKING SCHEME
+    # QUESTION NORMALIZATION
     # ========================================================
 
-    def _score_with_scheme(
-        self,
+    @staticmethod
+    def _normalize_question(
         question: Question,
-        student_answer: Any,
-        marking_scheme: MarkingScheme,
-    ) -> QuestionScore:
-        """
-        Score a question using a specific marking scheme.
-        """
+    ) -> Question:
+        """Convert and validate a question."""
 
-        previous_scheme = (
-            self.marking_scheme
-        )
+        if not isinstance(
+            question,
+            Question,
+        ):
+
+            if isinstance(
+                question,
+                Mapping,
+            ):
+
+                try:
+                    question = (
+                        Question.from_dict(
+                            question
+                        )
+                    )
+
+                except Exception as exc:
+
+                    raise ScoringError(
+                        "Invalid question data."
+                    ) from exc
+
+            else:
+
+                raise ScoringError(
+                    "Invalid Question object."
+                )
 
         try:
+            question.validate()
 
-            self.marking_scheme = (
-                marking_scheme
+        except Exception as exc:
+
+            raise ScoringError(
+                f"Invalid question: {question.id}"
+            ) from exc
+
+        return question
+
+    # ========================================================
+    # MARKING SCHEME
+    # ========================================================
+
+    def _build_marking_scheme(
+        self,
+        configuration: Optional[
+            QuizConfiguration
+        ],
+    ) -> MarkingScheme:
+        """Build a marking scheme for a quiz."""
+
+        if configuration is None:
+            return self.marking_scheme
+
+        if not isinstance(
+            configuration,
+            QuizConfiguration,
+        ):
+
+            if not isinstance(
+                configuration,
+                Mapping,
+            ):
+                raise InvalidScoringConfigurationError(
+                    "Invalid quiz configuration."
+                )
+
+            try:
+                configuration = (
+                    QuizConfiguration.from_dict(
+                        configuration
+                    )
+                )
+
+            except Exception as exc:
+
+                raise InvalidScoringConfigurationError(
+                    "Invalid quiz configuration."
+                ) from exc
+
+        return MarkingScheme.from_configuration(
+            configuration
+        )
+
+    # ========================================================
+    # ANSWER NORMALIZATION
+    # ========================================================
+
+    @staticmethod
+    def _normalize_student_answer(
+        question: Question,
+        answer: Any,
+    ) -> Any:
+        """Normalize a student's answer according to question type."""
+
+        if question.type == QuestionType.TRUE_FALSE:
+
+            normalized = normalize_boolean(
+                answer
             )
 
-            return self.score_question(
-                question,
-                student_answer,
-                maximum_marks=(
-                    question.marks
-                ),
+            if normalized is None:
+                raise InvalidAnswerError(
+                    f"Invalid True/False answer for "
+                    f"question {question.id}."
+                )
+
+            return (
+                "True"
+                if normalized
+                else "False"
             )
 
-        finally:
+        if question.type == QuestionType.MCQ:
 
-            self.marking_scheme = (
-                previous_scheme
+            if not question.options:
+                raise InvalidAnswerError(
+                    f"MCQ question {question.id} "
+                    "has no options."
+                )
+
+            if not isinstance(
+                answer,
+                str,
+            ):
+                raise InvalidAnswerError(
+                    f"MCQ answer for question "
+                    f"{question.id} must be text."
+                )
+
+            answer = answer.strip()
+
+            if not answer:
+                raise InvalidAnswerError(
+                    f"MCQ answer for question "
+                    f"{question.id} cannot be empty."
+                )
+
+            # Accept exact option text.
+            for option in question.options:
+
+                if answer == str(option).strip():
+                    return option
+
+            # Accept normalized option text.
+            normalized_answer = (
+                normalize_answer(answer)
             )
+
+            for option in question.options:
+
+                if normalized_answer == (
+                    normalize_answer(option)
+                ):
+                    return option
+
+            raise InvalidAnswerError(
+                f"Answer for question {question.id} "
+                "must match one of the available options."
+            )
+
+        # Subjective answers are intentionally preserved.
+        return answer
 
     # ========================================================
     # ANSWER COMPARISON
     # ========================================================
 
+    @staticmethod
     def _answers_equal(
-        self,
         student_answer: Any,
         correct_answer: Any,
         question_type: QuestionType,
     ) -> bool:
         """Compare answers using normalized values."""
 
-        if (
-            question_type
-            == QuestionType.TRUE_FALSE
-        ):
+        if question_type == QuestionType.TRUE_FALSE:
 
-            student_value = (
-                self._normalize_true_false(
-                    student_answer
-                )
+            student_value = normalize_boolean(
+                student_answer
             )
 
-            correct_value = (
-                self._normalize_true_false(
-                    correct_answer
-                )
+            correct_value = normalize_boolean(
+                correct_answer
             )
 
             return (
@@ -1117,13 +1262,13 @@ class ScoringEngine:
             )
 
         student_normalized = (
-            self._normalize_comparable_answer(
+            ScoringEngine._normalize_comparable_answer(
                 student_answer
             )
         )
 
         correct_normalized = (
-            self._normalize_comparable_answer(
+            ScoringEngine._normalize_comparable_answer(
                 correct_answer
             )
         )
@@ -1134,7 +1279,7 @@ class ScoringEngine:
         )
 
     # ========================================================
-    # NORMALIZATION
+    # COMPARABLE ANSWER NORMALIZATION
     # ========================================================
 
     @staticmethod
@@ -1148,8 +1293,23 @@ class ScoringEngine:
         - strings
         - numbers
         - booleans
-        - option letters
+        - option text
         """
+
+        if answer is None:
+            return None
+
+        if isinstance(
+            answer,
+            bool,
+        ):
+            return answer
+
+        if isinstance(
+            answer,
+            (int, float),
+        ):
+            return answer
 
         if isinstance(
             answer,
@@ -1158,35 +1318,23 @@ class ScoringEngine:
 
             value = answer.strip()
 
-            # Remove common MCQ formatting.
-            if (
-                len(value) >= 2
-                and value[0].upper()
-                in {"A", "B", "C", "D"}
-                and value[1] in {")", ".", ":"}
-            ):
+            if not value:
+                return ""
 
-                value = value[2:].strip()
+            return normalize_answer(
+                value
+            )
 
-            return value.casefold()
-
-        if isinstance(
-            answer,
-            bool,
-        ):
-
+        try:
+            return normalize_answer(
+                answer
+            )
+        except Exception:
             return answer
 
-        if isinstance(
-            answer,
-            (int, float),
-        ):
-
-            return answer
-
-        return normalize_answer(
-            answer
-        )
+    # ========================================================
+    # TRUE/FALSE NORMALIZATION
+    # ========================================================
 
     @staticmethod
     def _normalize_true_false(
@@ -1194,45 +1342,9 @@ class ScoringEngine:
     ) -> Optional[bool]:
         """Normalize a True/False answer."""
 
-        try:
-
-            return normalize_boolean(
-                answer
-            )
-
-        except Exception:
-
-            if isinstance(
-                answer,
-                str,
-            ):
-
-                value = (
-                    answer.strip()
-                    .casefold()
-                )
-
-                if value in {
-                    "true",
-                    "t",
-                    "yes",
-                    "y",
-                    "1",
-                }:
-
-                    return True
-
-                if value in {
-                    "false",
-                    "f",
-                    "no",
-                    "n",
-                    "0",
-                }:
-
-                    return False
-
-            return None
+        return normalize_boolean(
+            answer
+        )
 
     # ========================================================
     # EMPTY ANSWER
@@ -1242,6 +1354,7 @@ class ScoringEngine:
     def _is_unanswered(
         answer: Any,
     ) -> bool:
+        """Determine whether an answer was left blank."""
 
         if answer is None:
             return True
@@ -1250,17 +1363,47 @@ class ScoringEngine:
             answer,
             str,
         ) and not answer.strip():
-
             return True
 
         if isinstance(
             answer,
             (list, tuple, set),
         ) and not answer:
-
             return True
 
         return False
+
+    # ========================================================
+    # MARK VALIDATION
+    # ========================================================
+
+    @staticmethod
+    def _validate_marks(
+        value: Any,
+        label: str,
+    ) -> float:
+        """Validate and normalize a marks value."""
+
+        try:
+            value = float(value)
+
+        except (TypeError, ValueError) as exc:
+
+            raise ScoringError(
+                f"{label} must be numeric."
+            ) from exc
+
+        if not math.isfinite(value):
+            raise ScoringError(
+                f"{label} must be a finite number."
+            )
+
+        if value < 0:
+            raise ScoringError(
+                f"{label} cannot be negative."
+            )
+
+        return value
 
 
 # ============================================================

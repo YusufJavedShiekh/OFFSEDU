@@ -20,7 +20,9 @@ This module does NOT:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -102,30 +104,21 @@ class ResultSummary:
     """Basic numerical summary of a quiz."""
 
     total_questions: int
-
     attempted: int
-
     correct: int
-
     wrong: int
-
     partial: int
-
     unanswered: int
-
     total_marks: float
-
     obtained_marks: float
-
     percentage: float
-
     accuracy: float
-
     grade: Grade
-
     performance_level: PerformanceLevel
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert summary into an API-friendly dictionary."""
+
         return {
             "total_questions": self.total_questions,
             "attempted": self.attempted,
@@ -152,9 +145,7 @@ class ResultSummary:
 class PerformanceAnalysis:
     """Qualitative analysis of quiz performance."""
 
-    strengths: List[str] = field(
-        default_factory=list
-    )
+    strengths: List[str] = field(default_factory=list)
 
     areas_to_improve: List[str] = field(
         default_factory=list
@@ -167,10 +158,10 @@ class PerformanceAnalysis:
     )
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert analysis into an API-friendly dictionary."""
+
         return {
-            "strengths": list(
-                self.strengths
-            ),
+            "strengths": list(self.strengths),
             "areas_to_improve": list(
                 self.areas_to_improve
             ),
@@ -190,14 +181,10 @@ class QuizResult:
     """Complete generated result for a quiz."""
 
     quiz_id: Optional[str]
-
     summary: ResultSummary
-
     analysis: PerformanceAnalysis
 
-    question_scores: List[
-        QuestionScore
-    ] = field(
+    question_scores: List[QuestionScore] = field(
         default_factory=list
     )
 
@@ -206,6 +193,8 @@ class QuizResult:
     generated_at: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert complete result into an API-friendly dictionary."""
+
         return {
             "quiz_id": self.quiz_id,
             "summary": self.summary.to_dict(),
@@ -224,9 +213,7 @@ class QuizResult:
 # ============================================================
 
 class ResultGenerator:
-    """
-    Generates a complete result from QuizScore.
-    """
+    """Generates a complete result from QuizScore."""
 
     def __init__(
         self,
@@ -234,29 +221,30 @@ class ResultGenerator:
     ) -> None:
 
         try:
-            self.passing_percentage = float(
+            passing_percentage = float(
                 passing_percentage
             )
-
-        except (
-            TypeError,
-            ValueError,
-        ) as exc:
-
+        except (TypeError, ValueError) as exc:
             raise ResultGenerationError(
                 "Passing percentage must be numeric."
             ) from exc
 
+        if not math.isfinite(passing_percentage):
+            raise ResultGenerationError(
+                "Passing percentage must be finite."
+            )
+
         if not (
             0.0
-            <= self.passing_percentage
+            <= passing_percentage
             <= 100.0
         ):
-
             raise ResultGenerationError(
                 "Passing percentage must be between "
                 "0 and 100."
             )
+
+        self.passing_percentage = passing_percentage
 
     # ========================================================
     # MAIN RESULT GENERATION
@@ -267,13 +255,9 @@ class ResultGenerator:
         quiz_score: QuizScore,
         quiz_id: Optional[str] = None,
     ) -> QuizResult:
-        """
-        Generate a complete result from QuizScore.
-        """
+        """Generate a complete result from QuizScore."""
 
-        self._validate_score(
-            quiz_score
-        )
+        self._validate_score(quiz_score)
 
         grade = self.calculate_grade(
             quiz_score.percentage
@@ -331,16 +315,12 @@ class ResultGenerator:
             >= self.passing_percentage
         )
 
-        from datetime import datetime
-
         return QuizResult(
             quiz_id=quiz_id,
             summary=summary,
             analysis=analysis,
-            question_scores=(
-                list(
-                    quiz_score.question_scores
-                )
+            question_scores=list(
+                quiz_score.question_scores
             ),
             passed=passed,
             generated_at=(
@@ -365,7 +345,6 @@ class ResultGenerator:
         for grade, threshold in (
             GRADE_THRESHOLDS.items()
         ):
-
             if percentage >= threshold:
                 return grade
 
@@ -385,11 +364,9 @@ class ResultGenerator:
             percentage
         )
 
-        for (
-            level,
-            threshold,
-        ) in PERFORMANCE_THRESHOLDS.items():
-
+        for level, threshold in (
+            PERFORMANCE_THRESHOLDS.items()
+        ):
             if percentage >= threshold:
                 return level
 
@@ -403,14 +380,12 @@ class ResultGenerator:
         self,
         quiz_score: QuizScore,
     ) -> PerformanceAnalysis:
-        """
-        Generate strengths, weaknesses and feedback.
-        """
+        """Generate strengths, weaknesses and feedback."""
+
+        self._validate_score(quiz_score)
 
         strengths: List[str] = []
-
         areas_to_improve: List[str] = []
-
         recommendations: List[str] = []
 
         # ----------------------------------------------------
@@ -418,19 +393,16 @@ class ResultGenerator:
         # ----------------------------------------------------
 
         if quiz_score.accuracy >= 90:
-
             strengths.append(
                 "Excellent answer accuracy."
             )
 
         elif quiz_score.accuracy >= 75:
-
             strengths.append(
                 "Good answer accuracy."
             )
 
         elif quiz_score.accuracy < 50:
-
             areas_to_improve.append(
                 "Improve answer accuracy."
             )
@@ -442,20 +414,17 @@ class ResultGenerator:
         attempt_rate = 0.0
 
         if quiz_score.total_questions > 0:
-
             attempt_rate = (
                 quiz_score.attempted
                 / quiz_score.total_questions
             ) * 100
 
         if attempt_rate >= 90:
-
             strengths.append(
                 "You attempted almost all questions."
             )
 
         elif attempt_rate < 60:
-
             areas_to_improve.append(
                 "Try to attempt more questions."
             )
@@ -469,25 +438,20 @@ class ResultGenerator:
         # Correct answers
         # ----------------------------------------------------
 
-        if quiz_score.total_questions > 0:
+        correct_rate = 0.0
 
+        if quiz_score.total_questions > 0:
             correct_rate = (
                 quiz_score.correct
                 / quiz_score.total_questions
             ) * 100
 
-        else:
-
-            correct_rate = 0.0
-
         if correct_rate >= 80:
-
             strengths.append(
                 "Strong understanding of the tested concepts."
             )
 
         elif correct_rate < 50:
-
             areas_to_improve.append(
                 "Review the concepts behind incorrect answers."
             )
@@ -512,7 +476,6 @@ class ResultGenerator:
             ) * 100
 
             if wrong_rate >= 40:
-
                 areas_to_improve.append(
                     "Reduce incorrect answers."
                 )
@@ -527,7 +490,6 @@ class ResultGenerator:
         # ----------------------------------------------------
 
         if quiz_score.unanswered > 0:
-
             recommendations.append(
                 "Review unanswered questions before "
                 "submitting when time permits."
@@ -554,19 +516,16 @@ class ResultGenerator:
         # ----------------------------------------------------
 
         negative_marks = sum(
-            abs(
-                score.marks_obtained
+            abs(score.marks_obtained)
+            for score in quiz_score.question_scores
+            if (
+                score.status
+                == AnswerStatus.WRONG
+                and score.marks_obtained < 0
             )
-            for score in (
-                quiz_score.question_scores
-            )
-            if score.status
-            == AnswerStatus.WRONG
-            and score.marks_obtained < 0
         )
 
         if negative_marks > 0:
-
             recommendations.append(
                 "Avoid guessing when negative marking "
                 "makes an incorrect answer costly."
@@ -588,26 +547,22 @@ class ResultGenerator:
         )
 
         # ----------------------------------------------------
-        # Ensure useful output.
+        # Ensure useful output
         # ----------------------------------------------------
 
         if not strengths:
-
             strengths.append(
                 "You completed the assessment."
             )
 
         if not areas_to_improve:
-
             areas_to_improve.append(
                 "Continue practicing to maintain "
                 "your performance."
             )
 
         return PerformanceAnalysis(
-            strengths=self._unique(
-                strengths
-            ),
+            strengths=self._unique(strengths),
             areas_to_improve=self._unique(
                 areas_to_improve
             ),
@@ -629,7 +584,6 @@ class ResultGenerator:
         """Generate concise overall feedback."""
 
         if performance == PerformanceLevel.EXCELLENT:
-
             return (
                 f"Excellent performance with "
                 f"{percentage:.2f}% score. "
@@ -637,7 +591,6 @@ class ResultGenerator:
             )
 
         if performance == PerformanceLevel.VERY_GOOD:
-
             return (
                 f"Very good performance with "
                 f"{percentage:.2f}% score. "
@@ -646,7 +599,6 @@ class ResultGenerator:
             )
 
         if performance == PerformanceLevel.GOOD:
-
             return (
                 f"Good performance with "
                 f"{percentage:.2f}% score. "
@@ -655,7 +607,6 @@ class ResultGenerator:
             )
 
         if performance == PerformanceLevel.AVERAGE:
-
             return (
                 f"Average performance with "
                 f"{percentage:.2f}% score. "
@@ -677,20 +628,33 @@ class ResultGenerator:
     def get_question_analysis(
         quiz_score: QuizScore,
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Group questions according to their result.
-        """
+        """Group questions according to their result."""
 
-        analysis = {
+        if not isinstance(
+            quiz_score,
+            QuizScore,
+        ):
+            raise InvalidQuizScoreError(
+                "quiz_score must be a QuizScore object."
+            )
+
+        analysis: Dict[
+            str,
+            List[Dict[str, Any]],
+        ] = {
             "correct": [],
             "wrong": [],
             "partial": [],
             "unanswered": [],
         }
 
-        for score in (
-            quiz_score.question_scores
-        ):
+        for score in quiz_score.question_scores:
+
+            if not isinstance(
+                score,
+                QuestionScore,
+            ):
+                continue
 
             status = score.status.value
 
@@ -711,45 +675,49 @@ class ResultGenerator:
     def get_difficulty_analysis(
         quiz_score: QuizScore,
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Generate performance statistics by difficulty.
-        """
+        """Generate performance statistics by difficulty."""
+
+        if not isinstance(
+            quiz_score,
+            QuizScore,
+        ):
+            raise InvalidQuizScoreError(
+                "quiz_score must be a QuizScore object."
+            )
 
         result: Dict[
             str,
             Dict[str, Any],
         ] = {}
 
-        for score in (
-            quiz_score.question_scores
-        ):
+        for score in quiz_score.question_scores:
+
+            if not isinstance(
+                score,
+                QuestionScore,
+            ):
+                continue
 
             difficulty = score.difficulty
 
             if difficulty is None:
-
                 difficulty_name = "unknown"
 
             elif hasattr(
                 difficulty,
                 "value",
             ):
-
                 difficulty_name = (
                     difficulty.value
                 )
 
             else:
-
                 difficulty_name = str(
                     difficulty
                 )
 
             if difficulty_name not in result:
-
-                result[
-                    difficulty_name
-                ] = {
+                result[difficulty_name] = {
                     "total": 0,
                     "correct": 0,
                     "wrong": 0,
@@ -759,68 +727,49 @@ class ResultGenerator:
                     "maximum_marks": 0.0,
                 }
 
-            data = result[
-                difficulty_name
-            ]
+            data = result[difficulty_name]
 
             data["total"] += 1
 
             data["marks_obtained"] += (
-                score.marks_obtained
+                float(score.marks_obtained)
             )
 
             data["maximum_marks"] += (
-                score.maximum_marks
+                float(score.maximum_marks)
             )
 
-            if (
-                score.status
-                == AnswerStatus.CORRECT
-            ):
-
+            if score.status == AnswerStatus.CORRECT:
                 data["correct"] += 1
 
-            elif (
-                score.status
-                == AnswerStatus.WRONG
-            ):
-
+            elif score.status == AnswerStatus.WRONG:
                 data["wrong"] += 1
 
-            elif (
-                score.status
-                == AnswerStatus.PARTIAL
-            ):
-
+            elif score.status == AnswerStatus.PARTIAL:
                 data["partial"] += 1
 
-            elif (
-                score.status
-                == AnswerStatus.UNANSWERED
-            ):
-
+            elif score.status == AnswerStatus.UNANSWERED:
                 data["unanswered"] += 1
 
-        # Calculate percentage for each difficulty.
+        # ----------------------------------------------------
+        # Calculate percentages
+        # ----------------------------------------------------
+
         for data in result.values():
 
-            maximum = data[
-                "maximum_marks"
-            ]
+            maximum = data["maximum_marks"]
 
             if maximum > 0:
+                percentage = (
+                    data["marks_obtained"]
+                    / maximum
+                ) * 100
 
                 data["percentage"] = round(
                     max(
                         0.0,
                         min(
-                            (
-                                data[
-                                    "marks_obtained"
-                                ]
-                                / maximum
-                            )
-                            * 100,
+                            percentage,
                             100.0,
                         ),
                     ),
@@ -828,19 +777,14 @@ class ResultGenerator:
                 )
 
             else:
-
                 data["percentage"] = 0.0
 
-            data[
-                "marks_obtained"
-            ] = round(
+            data["marks_obtained"] = round(
                 data["marks_obtained"],
                 2,
             )
 
-            data[
-                "maximum_marks"
-            ] = round(
+            data["maximum_marks"] = round(
                 data["maximum_marks"],
                 2,
             )
@@ -855,75 +799,138 @@ class ResultGenerator:
     def _validate_score(
         quiz_score: QuizScore,
     ) -> None:
-        """Validate QuizScore before generating result."""
+        """Validate QuizScore before generating a result."""
 
         if not isinstance(
             quiz_score,
             QuizScore,
         ):
-
             raise InvalidQuizScoreError(
                 "quiz_score must be a QuizScore object."
             )
 
-        if quiz_score.total_questions < 0:
+        # ----------------------------------------------------
+        # Validate numeric values.
+        # ----------------------------------------------------
 
+        numeric_fields = {
+            "total_marks": quiz_score.total_marks,
+            "obtained_marks": quiz_score.obtained_marks,
+            "percentage": quiz_score.percentage,
+            "accuracy": quiz_score.accuracy,
+        }
+
+        for field_name, value in numeric_fields.items():
+
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise InvalidQuizScoreError(
+                    f"{field_name} must be numeric."
+                ) from exc
+
+            if not math.isfinite(value):
+                raise InvalidQuizScoreError(
+                    f"{field_name} must be finite."
+                )
+
+        # ----------------------------------------------------
+        # Validate counts.
+        # ----------------------------------------------------
+
+        counts = {
+            "total_questions": (
+                quiz_score.total_questions
+            ),
+            "attempted": quiz_score.attempted,
+            "correct": quiz_score.correct,
+            "wrong": quiz_score.wrong,
+            "partial": quiz_score.partial,
+            "unanswered": quiz_score.unanswered,
+        }
+
+        for field_name, value in counts.items():
+
+            if not isinstance(
+                value,
+                int,
+            ):
+                raise InvalidQuizScoreError(
+                    f"{field_name} must be an integer."
+                )
+
+            if value < 0:
+                raise InvalidQuizScoreError(
+                    f"{field_name} cannot be negative."
+                )
+
+        total = quiz_score.total_questions
+
+        # ----------------------------------------------------
+        # Count consistency.
+        # ----------------------------------------------------
+
+        if quiz_score.attempted > total:
             raise InvalidQuizScoreError(
-                "Total questions cannot be negative."
+                "Attempted count cannot exceed total questions."
             )
 
-        if quiz_score.attempted < 0:
-
+        if quiz_score.unanswered > total:
             raise InvalidQuizScoreError(
-                "Attempted count cannot be negative."
+                "Unanswered count cannot exceed total questions."
             )
 
-        if quiz_score.correct < 0:
-
+        if (
+            quiz_score.attempted
+            + quiz_score.unanswered
+            != total
+        ):
             raise InvalidQuizScoreError(
-                "Correct count cannot be negative."
+                "Attempted and unanswered counts must "
+                "add up to total questions."
             )
 
-        if quiz_score.wrong < 0:
-
+        if (
+            quiz_score.correct
+            + quiz_score.wrong
+            + quiz_score.partial
+            > quiz_score.attempted
+        ):
             raise InvalidQuizScoreError(
-                "Wrong count cannot be negative."
+                "Correct, wrong and partial counts "
+                "cannot exceed attempted questions."
             )
 
-        if quiz_score.partial < 0:
-
-            raise InvalidQuizScoreError(
-                "Partial count cannot be negative."
-            )
-
-        if quiz_score.unanswered < 0:
-
-            raise InvalidQuizScoreError(
-                "Unanswered count cannot be negative."
-            )
+        # ----------------------------------------------------
+        # Marks.
+        # ----------------------------------------------------
 
         if quiz_score.total_marks < 0:
-
             raise InvalidQuizScoreError(
                 "Total marks cannot be negative."
             )
 
+        # Negative obtained marks are allowed because
+        # the scoring engine supports negative marking.
+
+        # ----------------------------------------------------
+        # Percentage and accuracy.
+        # ----------------------------------------------------
+
         if not (
             0.0
-            <= quiz_score.percentage
+            <= float(quiz_score.percentage)
             <= 100.0
         ):
-
             raise InvalidQuizScoreError(
                 "Percentage must be between 0 and 100."
             )
 
         if not (
             0.0
-            <= quiz_score.accuracy
+            <= float(quiz_score.accuracy)
             <= 100.0
         ):
-
             raise InvalidQuizScoreError(
                 "Accuracy must be between 0 and 100."
             )
@@ -936,21 +943,19 @@ class ResultGenerator:
     def _normalize_percentage(
         percentage: float,
     ) -> float:
+        """Normalize percentage to the range 0-100."""
 
         try:
-
-            percentage = float(
-                percentage
-            )
-
-        except (
-            TypeError,
-            ValueError,
-        ) as exc:
-
+            percentage = float(percentage)
+        except (TypeError, ValueError) as exc:
             raise ResultGenerationError(
                 "Percentage must be numeric."
             ) from exc
+
+        if not math.isfinite(percentage):
+            raise ResultGenerationError(
+                "Percentage must be finite."
+            )
 
         return max(
             0.0,
@@ -964,17 +969,15 @@ class ResultGenerator:
     def _unique(
         values: List[str],
     ) -> List[str]:
+        """Remove duplicate strings while preserving order."""
 
         seen = set()
-
-        result = []
+        result: List[str] = []
 
         for value in values:
 
             if value not in seen:
-
                 seen.add(value)
-
                 result.append(value)
 
         return result
@@ -989,9 +992,7 @@ def generate_quiz_result(
     quiz_id: Optional[str] = None,
     passing_percentage: float = 40.0,
 ) -> QuizResult:
-    """
-    Convenience function for generating a quiz result.
-    """
+    """Convenience function for generating a quiz result."""
 
     generator = ResultGenerator(
         passing_percentage=passing_percentage

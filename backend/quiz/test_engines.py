@@ -33,7 +33,6 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from quiz.question_types import (
     Question,
-    QuestionType,
     QuizConfiguration,
 )
 
@@ -92,11 +91,8 @@ class QuizSession:
     """
 
     quiz_id: str
-
     questions: List[Question]
-
     duration: int
-
     status: QuizStatus = QuizStatus.NOT_STARTED
 
     answers: Dict[str, Any] = field(
@@ -110,9 +106,7 @@ class QuizSession:
     )
 
     started_at: Optional[datetime] = None
-
     submitted_at: Optional[datetime] = None
-
     paused_at: Optional[datetime] = None
 
     elapsed_before_pause: float = 0.0
@@ -156,17 +150,23 @@ class QuizSession:
 
     @property
     def answered_count(self) -> int:
+        question_ids = {
+            question.id
+            for question in self.questions
+        }
+
         return sum(
             1
-            for question in self.questions
-            if question.id in self.answers
+            for question_id in self.answers
+            if question_id in question_ids
         )
 
     @property
     def unanswered_count(self) -> int:
-        return (
+        return max(
+            0,
             self.total_questions
-            - self.answered_count
+            - self.answered_count,
         )
 
     @property
@@ -194,18 +194,13 @@ class QuizSession:
         question_data = []
 
         for question in self.questions:
-
             data = {
                 "id": question.id,
                 "text": question.text,
                 "type": question.type.value,
-                "options": list(
-                    question.options
-                ),
+                "options": list(question.options),
                 "marks": question.marks,
-                "difficulty": (
-                    question.difficulty.value
-                ),
+                "difficulty": question.difficulty.value,
                 "explanation": (
                     question.explanation
                     if self.status
@@ -235,12 +230,8 @@ class QuizSession:
             "current_question_index": (
                 self.current_question_index
             ),
-            "answered_count": (
-                self.answered_count
-            ),
-            "unanswered_count": (
-                self.unanswered_count
-            ),
+            "answered_count": self.answered_count,
+            "unanswered_count": self.unanswered_count,
             "marked_for_review": list(
                 self.marked_for_review
             ),
@@ -287,8 +278,9 @@ class TestEngine:
     be added later through quiz_repository.py.
     """
 
-    def __init__(self) -> None:
+    DEFAULT_DURATION = 600
 
+    def __init__(self) -> None:
         self._sessions: Dict[
             str,
             QuizSession,
@@ -305,30 +297,17 @@ class TestEngine:
         questions: List[Question],
         duration: Optional[int] = None,
         configuration: Optional[
-            QuizConfiguration
+            QuizConfiguration | Mapping[str, Any]
         ] = None,
         quiz_id: Optional[str] = None,
     ) -> QuizSession:
         """
         Create a new quiz session.
-
-        Args:
-            questions:
-                List of Question objects.
-
-            duration:
-                Quiz duration in seconds.
-
-            configuration:
-                Optional QuizConfiguration.
-
-            quiz_id:
-                Optional custom quiz ID.
         """
 
         if not isinstance(
             questions,
-            list,
+            (list, tuple),
         ):
             raise InvalidQuestionError(
                 "Questions must be provided as a list."
@@ -340,6 +319,11 @@ class TestEngine:
             )
 
         validated_questions: List[Question] = []
+        seen_question_ids = set()
+
+        # ----------------------------------------------------
+        # Validate questions.
+        # ----------------------------------------------------
 
         for question in questions:
 
@@ -372,12 +356,31 @@ class TestEngine:
                     f"Invalid question: {question.id}"
                 ) from exc
 
+            question_id = str(
+                question.id
+            ).strip()
+
+            if not question_id:
+                raise InvalidQuestionError(
+                    "Question ID cannot be empty."
+                )
+
+            if question_id in seen_question_ids:
+                raise InvalidQuestionError(
+                    f"Duplicate question ID: "
+                    f"{question_id}"
+                )
+
+            seen_question_ids.add(
+                question_id
+            )
+
             validated_questions.append(
                 question
             )
 
         # ----------------------------------------------------
-        # Determine duration.
+        # Normalize configuration.
         # ----------------------------------------------------
 
         if configuration is not None:
@@ -386,19 +389,35 @@ class TestEngine:
                 configuration,
                 QuizConfiguration,
             ):
-                configuration = (
-                    QuizConfiguration.from_dict(
-                        configuration
+
+                if not isinstance(
+                    configuration,
+                    Mapping,
+                ):
+                    raise TimerError(
+                        "Invalid quiz configuration."
                     )
-                )
+
+                try:
+                    configuration = (
+                        QuizConfiguration.from_dict(
+                            configuration
+                        )
+                    )
+                except Exception as exc:
+                    raise TimerError(
+                        "Invalid quiz configuration."
+                    ) from exc
 
             if duration is None:
-                duration = (
-                    configuration.time_limit
-                )
+                duration = configuration.time_limit
+
+        # ----------------------------------------------------
+        # Determine duration.
+        # ----------------------------------------------------
 
         if duration is None:
-            duration = 600
+            duration = self.DEFAULT_DURATION
 
         try:
             duration = int(duration)
@@ -416,14 +435,26 @@ class TestEngine:
             )
 
         # ----------------------------------------------------
-        # Create session.
+        # Create session ID.
         # ----------------------------------------------------
 
-        session_id = (
-            str(quiz_id)
-            if quiz_id
-            else str(uuid.uuid4())
-        )
+        if quiz_id is not None:
+            session_id = str(
+                quiz_id
+            ).strip()
+
+            if not session_id:
+                raise TestEngineError(
+                    "Quiz ID cannot be empty."
+                )
+        else:
+            session_id = str(
+                uuid.uuid4()
+            )
+
+        # ----------------------------------------------------
+        # Create session.
+        # ----------------------------------------------------
 
         session = QuizSession(
             quiz_id=session_id,
@@ -435,7 +466,8 @@ class TestEngine:
 
             if session_id in self._sessions:
                 raise TestEngineError(
-                    f"Quiz ID already exists: {session_id}"
+                    f"Quiz ID already exists: "
+                    f"{session_id}"
                 )
 
             self._sessions[
@@ -464,26 +496,23 @@ class TestEngine:
                 return session
 
             if session.status != QuizStatus.NOT_STARTED:
-
                 raise InvalidQuizStateError(
                     "Only a not-started quiz can be started."
                 )
+
+            now = self._now()
 
             session.status = (
                 QuizStatus.IN_PROGRESS
             )
 
-            session.started_at = (
-                datetime.utcnow()
-            )
+            session.started_at = now
 
             session._started_monotonic = (
                 time.monotonic()
             )
 
-            session.updated_at = (
-                datetime.utcnow()
-            )
+            session.updated_at = now
 
         return session
 
@@ -495,24 +524,33 @@ class TestEngine:
         self,
         quiz_id: str,
     ) -> QuizSession:
-        """Return a quiz session."""
+        """
+        Return a quiz session and process time-up.
+        """
 
         session = self._get_session(
             quiz_id
         )
 
-        # Automatically process time-up.
         if session.status == QuizStatus.IN_PROGRESS:
 
-            remaining = (
-                self.get_remaining_time(
-                    quiz_id
-                )
+            remaining = self.get_remaining_time(
+                quiz_id
             )
 
             if remaining <= 0:
+                session = self.handle_time_up(
+                    quiz_id
+                )
 
-                self.handle_time_up(
+        elif session.status == QuizStatus.PAUSED:
+
+            remaining = self.get_remaining_time(
+                quiz_id
+            )
+
+            if remaining <= 0:
+                session = self.handle_time_up(
                     quiz_id
                 )
 
@@ -529,7 +567,7 @@ class TestEngine:
         answer: Any,
     ) -> QuizSession:
         """
-        Save/update an answer for a question.
+        Save or update an answer for a question.
         """
 
         session = self.get_quiz(
@@ -552,25 +590,26 @@ class TestEngine:
                     "Answer cannot be None."
                 )
 
-            # Convert empty strings to unanswered.
-            if isinstance(
-                answer,
-                str,
-            ) and not answer.strip():
-
+            if (
+                isinstance(answer, str)
+                and not answer.strip()
+            ):
                 session.answers.pop(
-                    question_id,
+                    question.id,
                     None,
                 )
-
             else:
+                answer = self._validate_answer(
+                    question,
+                    answer,
+                )
 
                 session.answers[
-                    question_id
+                    question.id
                 ] = answer
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -592,18 +631,18 @@ class TestEngine:
                 session
             )
 
-            self._find_question(
+            question = self._find_question(
                 session,
                 question_id,
             )
 
             session.answers.pop(
-                question_id,
+                question.id,
                 None,
             )
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -619,13 +658,13 @@ class TestEngine:
             quiz_id
         )
 
-        self._find_question(
+        question = self._find_question(
             session,
             question_id,
         )
 
         return session.answers.get(
-            question_id
+            question.id
         )
 
     # ========================================================
@@ -652,11 +691,10 @@ class TestEngine:
                 session.current_question_index
                 < session.total_questions - 1
             ):
-
                 session.current_question_index += 1
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -681,11 +719,10 @@ class TestEngine:
                 session.current_question_index
                 > 0
             ):
-
                 session.current_question_index -= 1
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -715,7 +752,6 @@ class TestEngine:
                 TypeError,
                 ValueError,
             ) as exc:
-
                 raise InvalidQuestionError(
                     "Question index must be an integer."
                 ) from exc
@@ -724,7 +760,6 @@ class TestEngine:
                 0 <= question_index
                 < session.total_questions
             ):
-
                 raise InvalidQuestionError(
                     "Question index is out of range."
                 )
@@ -734,7 +769,7 @@ class TestEngine:
             )
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -760,17 +795,17 @@ class TestEngine:
                 session
             )
 
-            self._find_question(
+            question = self._find_question(
                 session,
                 question_id,
             )
 
             session.marked_for_review.add(
-                question_id
+                question.id
             )
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -792,17 +827,17 @@ class TestEngine:
                 session
             )
 
-            self._find_question(
+            question = self._find_question(
                 session,
                 question_id,
             )
 
             session.marked_for_review.discard(
-                question_id
+                question.id
             )
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -828,9 +863,7 @@ class TestEngine:
 
         with self._lock:
 
-            if session.status == (
-                QuizStatus.NOT_STARTED
-            ):
+            if session.status == QuizStatus.NOT_STARTED:
                 return session.duration
 
             if session.status in {
@@ -838,15 +871,9 @@ class TestEngine:
                 QuizStatus.TIME_UP,
                 QuizStatus.CANCELLED,
             }:
-
                 return 0
 
-            # ------------------------------------------------
-            # Paused state.
-            # ------------------------------------------------
-
             if session.status == QuizStatus.PAUSED:
-
                 elapsed = (
                     session.elapsed_before_pause
                 )
@@ -859,16 +886,15 @@ class TestEngine:
                     ),
                 )
 
-            # ------------------------------------------------
-            # In-progress state.
-            # ------------------------------------------------
+            if session.status == QuizStatus.IN_PROGRESS:
 
-            if (
-                session.status
-                == QuizStatus.IN_PROGRESS
-                and session._started_monotonic
-                is not None
-            ):
+                if (
+                    session._started_monotonic
+                    is None
+                ):
+                    raise TimerError(
+                        "Quiz timer is not initialized."
+                    )
 
                 elapsed = (
                     session.elapsed_before_pause
@@ -886,14 +912,11 @@ class TestEngine:
                     ),
                 )
 
-                if remaining <= 0:
-                    # Do not recursively call handle_time_up
-                    # while holding the lock.
-                    pass
-
                 return remaining
 
-            return session.duration
+            raise TimerError(
+                "Unable to determine quiz timer state."
+            )
 
     # ========================================================
     # PAUSE
@@ -915,10 +938,7 @@ class TestEngine:
                 session
             )
 
-            if (
-                session._started_monotonic
-                is None
-            ):
+            if session._started_monotonic is None:
                 raise TimerError(
                     "Quiz timer has not been initialized."
                 )
@@ -930,16 +950,20 @@ class TestEngine:
 
             session._started_monotonic = None
 
-            session.paused_at = (
-                datetime.utcnow()
-            )
+            now = self._now()
+
+            session.paused_at = now
 
             session.status = (
                 QuizStatus.PAUSED
             )
 
-            session.updated_at = (
-                datetime.utcnow()
+            session.updated_at = now
+
+        # Handle a timer that expired exactly while pausing.
+        if self.get_remaining_time(quiz_id) <= 0:
+            return self.handle_time_up(
+                quiz_id
             )
 
         return session
@@ -961,32 +985,24 @@ class TestEngine:
         with self._lock:
 
             if session.status != QuizStatus.PAUSED:
-
                 raise InvalidQuizStateError(
                     "Only a paused quiz can be resumed."
                 )
 
-            remaining = max(
-                0,
-                int(
-                    session.duration
-                    - session.elapsed_before_pause
-                ),
+            elapsed = (
+                session.elapsed_before_pause
             )
 
-            if remaining <= 0:
+            if elapsed >= session.duration:
+
+                now = self._now()
 
                 session.status = (
                     QuizStatus.TIME_UP
                 )
 
-                session.submitted_at = (
-                    datetime.utcnow()
-                )
-
-                session.updated_at = (
-                    datetime.utcnow()
-                )
+                session.submitted_at = now
+                session.updated_at = now
 
                 return session
 
@@ -999,9 +1015,8 @@ class TestEngine:
             )
 
             session.paused_at = None
-
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -1026,7 +1041,6 @@ class TestEngine:
                 QuizStatus.IN_PROGRESS,
                 QuizStatus.PAUSED,
             }:
-
                 raise InvalidQuizStateError(
                     "Quiz cannot be submitted in its "
                     "current state."
@@ -1038,7 +1052,6 @@ class TestEngine:
                 and session._started_monotonic
                 is not None
             ):
-
                 session.elapsed_before_pause += (
                     time.monotonic()
                     - session._started_monotonic
@@ -1046,17 +1059,14 @@ class TestEngine:
 
             session._started_monotonic = None
 
+            now = self._now()
+
             session.status = (
                 QuizStatus.SUBMITTED
             )
 
-            session.submitted_at = (
-                datetime.utcnow()
-            )
-
-            session.updated_at = (
-                datetime.utcnow()
-            )
+            session.submitted_at = now
+            session.updated_at = now
 
         return session
 
@@ -1081,32 +1091,43 @@ class TestEngine:
                 QuizStatus.TIME_UP,
                 QuizStatus.CANCELLED,
             }:
-
                 return session
 
             if session.status not in {
                 QuizStatus.IN_PROGRESS,
                 QuizStatus.PAUSED,
             }:
-
                 raise InvalidQuizStateError(
                     "Quiz timer cannot expire in the "
                     "current state."
                 )
 
+            if (
+                session.status
+                == QuizStatus.IN_PROGRESS
+                and session._started_monotonic
+                is not None
+            ):
+                session.elapsed_before_pause += (
+                    time.monotonic()
+                    - session._started_monotonic
+                )
+
             session._started_monotonic = None
+
+            session.elapsed_before_pause = max(
+                session.elapsed_before_pause,
+                float(session.duration),
+            )
+
+            now = self._now()
 
             session.status = (
                 QuizStatus.TIME_UP
             )
 
-            session.submitted_at = (
-                datetime.utcnow()
-            )
-
-            session.updated_at = (
-                datetime.utcnow()
-            )
+            session.submitted_at = now
+            session.updated_at = now
 
         return session
 
@@ -1130,9 +1151,9 @@ class TestEngine:
                 QuizStatus.SUBMITTED,
                 QuizStatus.TIME_UP,
             }:
-
                 raise InvalidQuizStateError(
-                    "A submitted quiz cannot be cancelled."
+                    "A submitted or expired quiz "
+                    "cannot be cancelled."
                 )
 
             session._started_monotonic = None
@@ -1142,7 +1163,7 @@ class TestEngine:
             )
 
             session.updated_at = (
-                datetime.utcnow()
+                self._now()
             )
 
         return session
@@ -1198,6 +1219,20 @@ class TestEngine:
     ) -> None:
         """Delete a quiz session from memory."""
 
+        if quiz_id is None:
+            raise QuizNotFoundError(
+                "Quiz ID cannot be empty."
+            )
+
+        quiz_id = str(
+            quiz_id
+        ).strip()
+
+        if not quiz_id:
+            raise QuizNotFoundError(
+                "Quiz ID cannot be empty."
+            )
+
         with self._lock:
 
             if quiz_id not in self._sessions:
@@ -1212,7 +1247,7 @@ class TestEngine:
     def list_quizzes(
         self,
     ) -> List[QuizSession]:
-        """Return all quiz sessions."""
+        """Return a snapshot of all quiz sessions."""
 
         with self._lock:
             return list(
@@ -1220,15 +1255,136 @@ class TestEngine:
             )
 
     # ========================================================
+    # ANSWER VALIDATION
+    # ========================================================
+
+    def _validate_answer(
+        self,
+        question: Question,
+        answer: Any,
+    ) -> Any:
+        """
+        Validate an answer against the question type.
+
+        MCQ answers must match one of the available options.
+        True/False answers are normalized to True or False.
+        Subjective answers are accepted as non-empty values
+        and can be evaluated later by the scoring system.
+        """
+
+        if answer is None:
+            raise InvalidAnswerError(
+                "Answer cannot be None."
+            )
+
+        if isinstance(answer, str):
+            answer = answer.strip()
+
+        question_type = (
+            question.type.value
+            if hasattr(question.type, "value")
+            else str(question.type).lower()
+        )
+
+        # ----------------------------------------------------
+        # Multiple Choice
+        # ----------------------------------------------------
+
+        if question_type == "mcq":
+
+            if not question.options:
+                raise InvalidAnswerError(
+                    "MCQ question has no available options."
+                )
+
+            if answer not in question.options:
+                raise InvalidAnswerError(
+                    "Answer must match one of the "
+                    "question options."
+                )
+
+            return answer
+
+        # ----------------------------------------------------
+        # True / False
+        # ----------------------------------------------------
+
+        if question_type == "true_false":
+
+            normalized = str(
+                answer
+            ).strip().lower()
+
+            if normalized not in {
+                "true",
+                "false",
+            }:
+                raise InvalidAnswerError(
+                    "True/False answers must be "
+                    "True or False."
+                )
+
+            return (
+                "True"
+                if normalized == "true"
+                else "False"
+            )
+
+        # ----------------------------------------------------
+        # Subjective Questions
+        # ----------------------------------------------------
+
+        if question_type in {
+            "short_answer",
+            "long_answer",
+        }:
+
+            if isinstance(
+                answer,
+                str,
+            ) and not answer:
+
+                raise InvalidAnswerError(
+                    "Answer cannot be empty."
+                )
+
+            return answer
+
+        # ----------------------------------------------------
+        # Unknown question type
+        # ----------------------------------------------------
+
+        raise InvalidAnswerError(
+            f"Unsupported question type: "
+            f"{question_type}"
+        )
+
+    # ========================================================
     # INTERNAL HELPERS
     # ========================================================
+
+    @staticmethod
+    def _now() -> datetime:
+        """Return the current UTC datetime."""
+
+        return datetime.utcnow()
 
     def _get_session(
         self,
         quiz_id: str,
     ) -> QuizSession:
+        """Return a session or raise QuizNotFoundError."""
 
-        if not quiz_id:
+        if quiz_id is None:
+            raise QuizNotFoundError(
+                "Quiz ID cannot be empty."
+            )
+
+        normalized_id = str(
+            quiz_id
+        ).strip()
+
+        if not normalized_id:
             raise QuizNotFoundError(
                 "Quiz ID cannot be empty."
             )
@@ -1236,12 +1392,12 @@ class TestEngine:
         with self._lock:
 
             session = self._sessions.get(
-                str(quiz_id)
+                normalized_id
             )
 
         if session is None:
             raise QuizNotFoundError(
-                f"Quiz not found: {quiz_id}"
+                f"Quiz not found: {normalized_id}"
             )
 
         return session
@@ -1250,11 +1406,9 @@ class TestEngine:
         self,
         session: QuizSession,
     ) -> None:
+        """Ensure the quiz is currently active."""
 
-        if session.status != (
-            QuizStatus.IN_PROGRESS
-        ):
-
+        if session.status != QuizStatus.IN_PROGRESS:
             raise InvalidQuizStateError(
                 "This operation requires an "
                 "in-progress quiz."
@@ -1265,14 +1419,31 @@ class TestEngine:
         session: QuizSession,
         question_id: str,
     ) -> Question:
+        """Find a question by ID."""
+
+        if question_id is None:
+            raise InvalidQuestionError(
+                "Question ID cannot be empty."
+            )
+
+        normalized_id = str(
+            question_id
+        ).strip()
+
+        if not normalized_id:
+            raise InvalidQuestionError(
+                "Question ID cannot be empty."
+            )
 
         for question in session.questions:
 
-            if question.id == question_id:
+            if str(
+                question.id
+            ).strip() == normalized_id:
                 return question
 
         raise InvalidQuestionError(
-            f"Question not found: {question_id}"
+            f"Question not found: {normalized_id}"
         )
 
 

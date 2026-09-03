@@ -65,10 +65,13 @@ class QuestionGenerator:
             if gemma_service is not None
             else GemmaService()
         )
-        self.max_retries = max(
-            1,
-            int(max_retries),
-        )
+
+        try:
+            max_retries = int(max_retries)
+        except (TypeError, ValueError):
+            max_retries = self.DEFAULT_MAX_RETRIES
+
+        self.max_retries = max(1, max_retries)
 
     # ========================================================
     # PUBLIC API
@@ -85,23 +88,8 @@ class QuestionGenerator:
     ) -> List[Question]:
         """
         Generate questions from supplied study content.
-
-        Args:
-            content:
-                Source material used for question generation.
-            configuration:
-                QuizConfiguration object or dictionary.
-            topic:
-                Optional topic/chapter name.
-            source_metadata:
-                Optional document metadata.
-
-        Returns:
-            List[Question]
-
-        Raises:
-            QuestionGenerationError
         """
+
         if not isinstance(content, str):
             raise QuestionGenerationError(
                 "Content must be a string."
@@ -134,23 +122,19 @@ class QuestionGenerator:
 
                 response = self._call_gemma(prompt)
 
-                raw_questions = (
-                    self._parse_response(response)
+                raw_questions = self._parse_response(
+                    response
                 )
 
-                questions = (
-                    self._convert_questions(
-                        raw_questions,
-                        configuration,
-                        topic,
-                        source_metadata,
-                    )
+                questions = self._convert_questions(
+                    raw_questions=raw_questions,
+                    configuration=configuration,
+                    topic=topic,
+                    source_metadata=source_metadata,
                 )
 
-                questions = (
-                    self._remove_duplicates(
-                        questions
-                    )
+                questions = self._remove_duplicates(
+                    questions
                 )
 
                 if len(questions) < (
@@ -234,13 +218,11 @@ class QuestionGenerator:
             in configuration.question_types
         )
 
-        difficulty = (
-            configuration.difficulty.value
-        )
+        difficulty = configuration.difficulty.value
 
         topic_text = (
             topic.strip()
-            if topic
+            if isinstance(topic, str) and topic.strip()
             else "General"
         )
 
@@ -256,10 +238,6 @@ class QuestionGenerator:
                 )
             )
 
-        # ----------------------------------------------------
-        # Local prompt builder.
-        # ----------------------------------------------------
-
         type_instructions = (
             self._build_type_instructions(
                 configuration.question_types
@@ -269,8 +247,7 @@ class QuestionGenerator:
         return f"""
 You are the quiz generation engine for StudyGemma.
 
-Generate exactly
-{configuration.number_of_questions}
+Generate exactly {configuration.number_of_questions}
 high-quality quiz questions from the supplied study
 content.
 
@@ -299,7 +276,6 @@ SOURCE CONTENT:
 ----------------
 {content}
 ----------------
-
 {metadata_text}
 
 IMPORTANT RULES:
@@ -309,13 +285,16 @@ IMPORTANT RULES:
 3. Questions must be clear and unambiguous.
 4. Do not repeat questions.
 5. Match the requested difficulty.
-6. For MCQ questions, provide at least four options.
-7. For MCQ, correct_answer must exactly match one option.
-8. For True/False, correct_answer must be true or false.
-9. Short and long answer questions may contain a reference answer.
-10. Return ONLY valid JSON.
-11. Do not include Markdown code fences.
-12. Return an array of question objects.
+6. Use ONLY the allowed question types.
+7. Every question must use exactly {configuration.marks_per_question} marks.
+8. For MCQ questions, provide exactly four plausible options.
+9. For MCQ, correct_answer must exactly match one option.
+10. For True/False, options must be True and False.
+11. For True/False, correct_answer must be True or False.
+12. Short and long answer questions may contain a reference answer.
+13. Return ONLY valid JSON.
+14. Do not include Markdown code fences.
+15. Return an array of question objects.
 
 Required JSON format:
 
@@ -331,8 +310,8 @@ Required JSON format:
       "Option D"
     ],
     "correct_answer": "Option A",
-    "marks": 1,
-    "difficulty": "easy",
+    "marks": {configuration.marks_per_question},
+    "difficulty": "{difficulty}",
     "explanation": "Explanation",
     "metadata": {{
       "topic": "{topic_text}"
@@ -349,14 +328,14 @@ Required JSON format:
 
         if QuestionType.MCQ in question_types:
             instructions.append(
-                "- MCQ: 4 plausible options and one "
-                "correct answer."
+                "- MCQ: exactly 4 plausible options "
+                "and one correct answer."
             )
 
         if QuestionType.TRUE_FALSE in question_types:
             instructions.append(
-                "- TRUE/FALSE: correct_answer must be "
-                "true or false."
+                "- TRUE/FALSE: use True and False as "
+                "the two options."
             )
 
         if QuestionType.SHORT_ANSWER in question_types:
@@ -384,8 +363,8 @@ Required JSON format:
         """
         Call Gemma through GemmaService.
 
-        Supports common method names so the generator remains
-        compatible with the existing AI service.
+        The current GemmaService exposes generate().
+        Fallback method names are retained for compatibility.
         """
 
         methods = (
@@ -404,10 +383,7 @@ Required JSON format:
             if not callable(method):
                 continue
 
-            try:
-                return method(prompt)
-            except TypeError:
-                continue
+            return method(prompt)
 
         raise QuestionGenerationError(
             "GemmaService does not provide a supported "
@@ -431,32 +407,17 @@ Required JSON format:
                 "Gemma returned an empty response."
             )
 
-        # ----------------------------------------------------
-        # Already parsed Python list.
-        # ----------------------------------------------------
-
         if isinstance(response, list):
-            return self._validate_raw_list(
-                response
-            )
-
-        # ----------------------------------------------------
-        # Dictionary containing questions.
-        # ----------------------------------------------------
+            return self._validate_raw_list(response)
 
         if isinstance(response, Mapping):
             if "questions" in response:
                 questions = response["questions"]
 
-                if isinstance(
-                    questions,
-                    list,
-                ):
+                if isinstance(questions, list):
                     return self._validate_raw_list(
                         questions
                     )
-
-            # Single question object.
 
             if (
                 "text" in response
@@ -468,10 +429,6 @@ Required JSON format:
                 "Gemma response dictionary does not "
                 "contain questions."
             )
-
-        # ----------------------------------------------------
-        # String response.
-        # ----------------------------------------------------
 
         if isinstance(response, str):
             cleaned = self._clean_json_response(
@@ -485,33 +442,22 @@ Required JSON format:
                     "Gemma returned invalid JSON."
                 ) from exc
 
-            if isinstance(
-                parsed,
-                Mapping,
-            ):
+            if isinstance(parsed, Mapping):
                 parsed = parsed.get(
                     "questions",
                     parsed,
                 )
 
-            if not isinstance(
-                parsed,
-                list,
-            ):
-                if isinstance(
-                    parsed,
-                    Mapping,
-                ):
-                    parsed = [parsed]
-                else:
-                    raise QuestionGenerationError(
-                        "Parsed Gemma response is not "
-                        "a question list."
-                    )
+            if isinstance(parsed, Mapping):
+                parsed = [parsed]
 
-            return self._validate_raw_list(
-                parsed
-            )
+            if not isinstance(parsed, list):
+                raise QuestionGenerationError(
+                    "Parsed Gemma response is not "
+                    "a question list."
+                )
+
+            return self._validate_raw_list(parsed)
 
         raise QuestionGenerationError(
             "Unsupported Gemma response type."
@@ -527,7 +473,6 @@ Required JSON format:
 
         text = response.strip()
 
-        # Remove ```json ... ```
         text = re.sub(
             r"^```(?:json)?\s*",
             "",
@@ -543,15 +488,11 @@ Required JSON format:
 
         text = text.strip()
 
-        # Find JSON array if Gemma added surrounding text.
-
         start = text.find("[")
         end = text.rfind("]")
 
-        if start != -1 and end != -1:
-            text = text[
-                start:end + 1
-            ]
+        if start != -1 and end != -1 and start < end:
+            text = text[start:end + 1]
 
         return text.strip()
 
@@ -567,10 +508,7 @@ Required JSON format:
         valid: List[Mapping[str, Any]] = []
 
         for item in questions:
-            if not isinstance(
-                item,
-                Mapping,
-            ):
+            if not isinstance(item, Mapping):
                 continue
 
             valid.append(item)
@@ -596,7 +534,6 @@ Required JSON format:
             Mapping[str, Any]
         ],
     ) -> List[Question]:
-
         questions: List[Question] = []
 
         for index, raw in enumerate(
@@ -606,11 +543,11 @@ Required JSON format:
             try:
                 question_data = (
                     self._normalize_raw_question(
-                        raw,
-                        index,
-                        configuration,
-                        topic,
-                        source_metadata,
+                        raw=raw,
+                        index=index,
+                        configuration=configuration,
+                        topic=topic,
+                        source_metadata=source_metadata,
                     )
                 )
 
@@ -618,9 +555,7 @@ Required JSON format:
                     question_data
                 )
 
-                questions.append(
-                    question
-                )
+                questions.append(question)
 
             except (
                 QuestionValidationError,
@@ -651,19 +586,39 @@ Required JSON format:
             ),
         )
 
-        question_type = normalize_question_type(
-            raw.get(
-                "type",
-                QuestionType.MCQ,
+        try:
+            question_type = normalize_question_type(
+                raw.get(
+                    "type",
+                    QuestionType.MCQ,
+                )
             )
-        )
+        except (ValueError, TypeError) as exc:
+            raise QuestionValidationError(
+                "Invalid question type."
+            ) from exc
 
-        difficulty = normalize_difficulty(
-            raw.get(
-                "difficulty",
-                configuration.difficulty,
+        # AI must respect configured question types.
+        if question_type not in configuration.question_types:
+            raise QuestionValidationError(
+                f"Question type '{question_type.value}' "
+                "is not allowed by the quiz configuration."
             )
-        )
+
+        try:
+            difficulty = normalize_difficulty(
+                raw.get(
+                    "difficulty",
+                    configuration.difficulty,
+                )
+            )
+        except (ValueError, TypeError) as exc:
+            raise QuestionValidationError(
+                "Invalid question difficulty."
+            ) from exc
+
+        # Keep the configured difficulty authoritative.
+        difficulty = configuration.difficulty
 
         options = raw.get(
             "options",
@@ -680,10 +635,8 @@ Required JSON format:
             ),
         )
 
-        marks = raw.get(
-            "marks",
-            configuration.marks_per_question,
-        )
+        # Configuration controls marks.
+        marks = configuration.marks_per_question
 
         explanation = raw.get(
             "explanation"
@@ -716,18 +669,28 @@ Required JSON format:
         # Metadata.
         # ----------------------------------------------------
 
-        metadata = dict(
-            raw.get(
-                "metadata",
-                {},
-            )
-            or {}
+        raw_metadata = raw.get(
+            "metadata",
+            {},
         )
+
+        if raw_metadata is None:
+            raw_metadata = {}
+
+        if not isinstance(
+            raw_metadata,
+            Mapping,
+        ):
+            raise QuestionValidationError(
+                "Question metadata must be a mapping."
+            )
+
+        metadata = dict(raw_metadata)
 
         if topic:
             metadata.setdefault(
                 "topic",
-                topic,
+                topic.strip(),
             )
 
         if source_metadata:
@@ -748,14 +711,24 @@ Required JSON format:
                     "id",
                     f"q{index}",
                 )
-            ),
-            "text": str(text).strip(),
+            ).strip(),
+
+            "text": str(
+                text
+            ).strip(),
+
             "type": question_type,
+
             "options": options,
+
             "correct_answer": correct_answer,
+
             "marks": marks,
+
             "difficulty": difficulty,
+
             "explanation": explanation,
+
             "metadata": metadata,
         }
 
@@ -826,13 +799,8 @@ Required JSON format:
             if normalized_text in seen:
                 continue
 
-            seen.add(
-                normalized_text
-            )
-
-            unique.append(
-                question
-            )
+            seen.add(normalized_text)
+            unique.append(question)
 
         return unique
 
