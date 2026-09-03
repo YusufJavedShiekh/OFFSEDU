@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import mimetypes
 import re
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
+
+# ============================================================
+# EXCEPTIONS
+# ============================================================
 
 class FileValidationError(Exception):
     """Base exception for file validation errors."""
@@ -30,6 +35,10 @@ class UnsafeFilenameError(FileValidationError):
     """Raised when a filename is unsafe."""
 
 
+# ============================================================
+# VALIDATION RESULT
+# ============================================================
+
 @dataclass
 class ValidationResult:
     """Result returned after validating a file."""
@@ -45,6 +54,7 @@ class ValidationResult:
 
     def to_dict(self) -> Dict:
         """Convert validation result to a dictionary."""
+
         return {
             "valid": self.valid,
             "file_path": self.file_path,
@@ -52,16 +62,21 @@ class ValidationResult:
             "extension": self.extension,
             "mime_type": self.mime_type,
             "file_size": self.file_size,
-            "errors": self.errors,
-            "warnings": self.warnings,
+            "errors": list(self.errors),
+            "warnings": list(self.warnings),
         }
 
+
+# ============================================================
+# FILE VALIDATOR
+# ============================================================
 
 class FileValidator:
     """
     Validates files used by StudyGemma.
 
     The validator performs:
+
     - existence checks
     - file checks
     - empty-file checks
@@ -69,6 +84,7 @@ class FileValidator:
     - filename safety checks
     - file-size checks
     - MIME-type detection
+    - basic readability checks
     """
 
     DEFAULT_ALLOWED_EXTENSIONS: Set[str] = {
@@ -90,7 +106,9 @@ class FileValidator:
     DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
     # Characters that should not appear in uploaded filenames.
-    UNSAFE_FILENAME_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+    UNSAFE_FILENAME_PATTERN = re.compile(
+        r'[<>:"/\\|?*\x00-\x1f]'
+    )
 
     def __init__(
         self,
@@ -102,7 +120,9 @@ class FileValidator:
 
         Args:
             allowed_extensions:
-                Iterable of allowed extensions such as [".pdf", ".docx"].
+                Iterable of allowed extensions such as
+                [".pdf", ".docx"].
+
             max_file_size:
                 Maximum allowed file size in bytes.
         """
@@ -113,19 +133,36 @@ class FileValidator:
             else self.DEFAULT_ALLOWED_EXTENSIONS
         )
 
-        self.allowed_extensions = {
-            self._normalize_extension(extension)
-            for extension in extensions
-        }
+        try:
+            max_file_size = int(max_file_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "max_file_size must be an integer."
+            ) from exc
 
         if max_file_size <= 0:
-            raise ValueError("max_file_size must be greater than zero.")
+            raise ValueError(
+                "max_file_size must be greater than zero."
+            )
 
+        normalized_extensions = set()
+
+        for extension in extensions:
+            normalized_extensions.add(
+                self._normalize_extension(extension)
+            )
+
+        if not normalized_extensions:
+            raise ValueError(
+                "At least one allowed file extension is required."
+            )
+
+        self.allowed_extensions = normalized_extensions
         self.max_file_size = max_file_size
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # ========================================================
+    # PUBLIC API
+    # ========================================================
 
     def validate(
         self,
@@ -138,14 +175,37 @@ class FileValidator:
         Args:
             file_path:
                 Path to the file.
+
             raise_on_error:
-                If True, raise FileValidationError when validation fails.
+                If True, raise FileValidationError when
+                validation fails.
 
         Returns:
             ValidationResult
         """
 
-        path = Path(file_path)
+        if file_path is None:
+            result = ValidationResult(
+                valid=False,
+                errors=["File path cannot be empty."],
+            )
+            return self._finish(
+                result,
+                raise_on_error,
+            )
+
+        try:
+            path = Path(file_path)
+        except (TypeError, ValueError) as exc:
+            result = ValidationResult(
+                valid=False,
+                file_path=str(file_path),
+                errors=[f"Invalid file path: {exc}"],
+            )
+            return self._finish(
+                result,
+                raise_on_error,
+            )
 
         result = ValidationResult(
             valid=False,
@@ -154,66 +214,88 @@ class FileValidator:
             extension=path.suffix.lower(),
         )
 
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
         # Existence
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
 
         if not path.exists():
-            result.errors.append("File does not exist.")
-            return self._finish(result, raise_on_error)
+            result.errors.append(
+                "File does not exist."
+            )
+            return self._finish(
+                result,
+                raise_on_error,
+            )
 
         if not path.is_file():
-            result.errors.append("The provided path is not a file.")
-            return self._finish(result, raise_on_error)
+            result.errors.append(
+                "The provided path is not a file."
+            )
+            return self._finish(
+                result,
+                raise_on_error,
+            )
 
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
         # Filename
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
 
         try:
             self.validate_filename(path.name)
         except UnsafeFilenameError as exc:
             result.errors.append(str(exc))
 
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
         # File size
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
 
         try:
             file_size = path.stat().st_size
             result.file_size = file_size
         except OSError as exc:
-            result.errors.append(f"Unable to read file information: {exc}")
-            return self._finish(result, raise_on_error)
+            result.errors.append(
+                f"Unable to read file information: {exc}"
+            )
+            return self._finish(
+                result,
+                raise_on_error,
+            )
 
         if file_size == 0:
-            result.errors.append("File is empty.")
+            result.errors.append(
+                "File is empty."
+            )
 
         if file_size > self.max_file_size:
             result.errors.append(
-                f"File size ({self._format_size(file_size)}) exceeds "
-                f"the maximum allowed size "
+                f"File size ({self._format_size(file_size)}) "
+                f"exceeds the maximum allowed size "
                 f"({self._format_size(self.max_file_size)})."
             )
 
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
         # Extension
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
 
         extension = path.suffix.lower()
 
         if not extension:
-            result.errors.append("File has no extension.")
+            result.errors.append(
+                "File has no extension."
+            )
         elif extension not in self.allowed_extensions:
             result.errors.append(
                 f"Unsupported file extension: {extension}"
             )
 
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
         # MIME type
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
 
-        mime_type, _ = mimetypes.guess_type(path.name)
+        mime_type, _ = mimetypes.guess_type(
+            path.name
+        )
+
         result.mime_type = mime_type
 
         if mime_type is None:
@@ -221,9 +303,9 @@ class FileValidator:
                 "Could not determine MIME type from the filename."
             )
 
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
         # Readability
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
 
         try:
             with path.open("rb") as file:
@@ -233,15 +315,23 @@ class FileValidator:
                 f"File cannot be read: {exc}"
             )
 
-        return self._finish(result, raise_on_error)
+        return self._finish(
+            result,
+            raise_on_error,
+        )
 
-    def is_valid(self, file_path: str | Path) -> bool:
-        """
-        Return True if the file passes validation.
-        """
+    def is_valid(
+        self,
+        file_path: str | Path,
+    ) -> bool:
+        """Return True if the file passes validation."""
+
         return self.validate(file_path).valid
 
-    def validate_filename(self, filename: str) -> bool:
+    def validate_filename(
+        self,
+        filename: str,
+    ) -> bool:
         """
         Validate filename safety.
 
@@ -252,13 +342,34 @@ class FileValidator:
             UnsafeFilenameError
         """
 
+        if filename is None:
+            raise UnsafeFilenameError(
+                "Filename cannot be empty."
+            )
+
+        if not isinstance(filename, str):
+            raise UnsafeFilenameError(
+                "Filename must be a string."
+            )
+
         if not filename or not filename.strip():
-            raise UnsafeFilenameError("Filename cannot be empty.")
+            raise UnsafeFilenameError(
+                "Filename cannot be empty."
+            )
 
         if filename in {".", ".."}:
-            raise UnsafeFilenameError("Invalid filename.")
+            raise UnsafeFilenameError(
+                "Invalid filename."
+            )
 
-        if self.UNSAFE_FILENAME_PATTERN.search(filename):
+        if filename != filename.strip():
+            raise UnsafeFilenameError(
+                "Filename cannot start or end with whitespace."
+            )
+
+        if self.UNSAFE_FILENAME_PATTERN.search(
+            filename
+        ):
             raise UnsafeFilenameError(
                 "Filename contains unsafe characters."
             )
@@ -270,19 +381,21 @@ class FileValidator:
 
         return True
 
-    def validate_extension(self, file_path: str | Path) -> bool:
-        """
-        Check whether the file extension is supported.
-        """
+    def validate_extension(
+        self,
+        file_path: str | Path,
+    ) -> bool:
+        """Check whether the file extension is supported."""
 
         extension = Path(file_path).suffix.lower()
 
         return extension in self.allowed_extensions
 
-    def validate_size(self, file_path: str | Path) -> bool:
-        """
-        Check whether the file is within the configured size limit.
-        """
+    def validate_size(
+        self,
+        file_path: str | Path,
+    ) -> bool:
+        """Check whether the file is within the configured size limit."""
 
         path = Path(file_path)
 
@@ -290,22 +403,36 @@ class FileValidator:
             return False
 
         try:
-            return path.stat().st_size <= self.max_file_size
+            return (
+                path.stat().st_size
+                <= self.max_file_size
+            )
         except OSError:
             return False
 
-    def get_file_info(self, file_path: str | Path) -> Dict:
-        """
-        Return basic information about a file.
-        """
+    def get_file_info(
+        self,
+        file_path: str | Path,
+    ) -> Dict:
+        """Return basic information about a file."""
 
         path = Path(file_path)
 
         if not path.exists() or not path.is_file():
-            raise FileValidationError("File does not exist or is not a file.")
+            raise FileValidationError(
+                "File does not exist or is not a file."
+            )
 
-        size = path.stat().st_size
-        mime_type, _ = mimetypes.guess_type(path.name)
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            raise FileValidationError(
+                f"Unable to read file information: {exc}"
+            ) from exc
+
+        mime_type, _ = mimetypes.guess_type(
+            path.name
+        )
 
         return {
             "filename": path.name,
@@ -317,14 +444,15 @@ class FileValidator:
         }
 
     def get_allowed_extensions(self) -> list[str]:
-        """
-        Return supported extensions.
-        """
-        return sorted(self.allowed_extensions)
+        """Return supported extensions."""
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+        return sorted(
+            self.allowed_extensions
+        )
+
+    # ========================================================
+    # INTERNAL HELPERS
+    # ========================================================
 
     def _finish(
         self,
@@ -337,12 +465,15 @@ class FileValidator:
 
         if not result.valid and raise_on_error:
             message = "; ".join(result.errors)
+
             raise FileValidationError(message)
 
         return result
 
     @staticmethod
-    def _normalize_extension(extension: str) -> str:
+    def _normalize_extension(
+        extension: str,
+    ) -> str:
         """
         Normalize an extension.
 
@@ -351,21 +482,54 @@ class FileValidator:
             ".DOCX" -> ".docx"
         """
 
+        if extension is None:
+            raise ValueError(
+                "File extension cannot be empty."
+            )
+
         extension = str(extension).strip().lower()
 
         if not extension:
-            raise ValueError("File extension cannot be empty.")
+            raise ValueError(
+                "File extension cannot be empty."
+            )
 
         if not extension.startswith("."):
             extension = "." + extension
 
+        if len(extension) == 1:
+            raise ValueError(
+                "File extension cannot be empty."
+            )
+
+        if not re.fullmatch(
+            r"\.[a-z0-9]+",
+            extension,
+        ):
+            raise ValueError(
+                f"Invalid file extension: {extension}"
+            )
+
         return extension
 
     @staticmethod
-    def _format_size(size: int) -> str:
+    def _format_size(
+        size: int,
+    ) -> str:
         """Convert bytes into a human-readable size."""
 
-        units = ["B", "KB", "MB", "GB", "TB"]
+        if size < 0:
+            raise ValueError(
+                "File size cannot be negative."
+            )
+
+        units = [
+            "B",
+            "KB",
+            "MB",
+            "GB",
+            "TB",
+        ]
 
         value = float(size)
 
@@ -378,9 +542,9 @@ class FileValidator:
         return f"{size} B"
 
 
-# ----------------------------------------------------------------------
-# Convenience functions
-# ----------------------------------------------------------------------
+# ============================================================
+# CONVENIENCE FUNCTIONS
+# ============================================================
 
 _default_validator = FileValidator()
 
@@ -389,9 +553,7 @@ def validate_file(
     file_path: str | Path,
     raise_on_error: bool = False,
 ) -> ValidationResult:
-    """
-    Convenience function for validating a file.
-    """
+    """Convenience function for validating a file."""
 
     return _default_validator.validate(
         file_path,
@@ -399,9 +561,11 @@ def validate_file(
     )
 
 
-def is_valid_file(file_path: str | Path) -> bool:
-    """
-    Convenience function returning only True/False.
-    """
+def is_valid_file(
+    file_path: str | Path,
+) -> bool:
+    """Convenience function returning only True/False."""
 
-    return _default_validator.is_valid(file_path)
+    return _default_validator.is_valid(
+        file_path
+    )

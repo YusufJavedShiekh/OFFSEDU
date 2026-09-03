@@ -25,8 +25,6 @@ import re
 from typing import Any, Dict, List, Mapping, Optional
 
 from ai.gemma_service import GemmaService
-from ai.prompts import QuizPrompts
-
 from quiz.question_types import (
     Difficulty,
     Question,
@@ -62,13 +60,11 @@ class QuestionGenerator:
         gemma_service: Optional[GemmaService] = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
-
         self.gemma_service = (
             gemma_service
             if gemma_service is not None
             else GemmaService()
         )
-
         self.max_retries = max(
             1,
             int(max_retries),
@@ -93,13 +89,10 @@ class QuestionGenerator:
         Args:
             content:
                 Source material used for question generation.
-
             configuration:
                 QuizConfiguration object or dictionary.
-
             topic:
                 Optional topic/chapter name.
-
             source_metadata:
                 Optional document metadata.
 
@@ -109,7 +102,6 @@ class QuestionGenerator:
         Raises:
             QuestionGenerationError
         """
-
         if not isinstance(content, str):
             raise QuestionGenerationError(
                 "Content must be a string."
@@ -132,9 +124,7 @@ class QuestionGenerator:
             1,
             self.max_retries + 1,
         ):
-
             try:
-
                 prompt = self._build_prompt(
                     content=content,
                     configuration=configuration,
@@ -142,9 +132,7 @@ class QuestionGenerator:
                     source_metadata=source_metadata,
                 )
 
-                response = self._call_gemma(
-                    prompt
-                )
+                response = self._call_gemma(prompt)
 
                 raw_questions = (
                     self._parse_response(response)
@@ -178,7 +166,6 @@ class QuestionGenerator:
                 ]
 
             except Exception as exc:
-
                 last_error = exc
 
                 if attempt == self.max_retries:
@@ -197,7 +184,6 @@ class QuestionGenerator:
         self,
         configuration: QuizConfiguration | Mapping[str, Any],
     ) -> QuizConfiguration:
-
         if isinstance(
             configuration,
             QuizConfiguration,
@@ -238,9 +224,8 @@ class QuestionGenerator:
         """
         Build a structured prompt for Gemma.
 
-        Uses QuizPrompts when available. A fallback prompt is
-        included so this module remains usable even if the
-        prompt helper has not yet been implemented.
+        Uses a local prompt builder so this module does not
+        depend on an external QuizPrompts class.
         """
 
         question_types = ", ".join(
@@ -262,7 +247,6 @@ class QuestionGenerator:
         metadata_text = ""
 
         if source_metadata:
-
             metadata_text = (
                 "\nSource metadata:\n"
                 + json.dumps(
@@ -273,39 +257,7 @@ class QuestionGenerator:
             )
 
         # ----------------------------------------------------
-        # Try centralized prompt service first.
-        # ----------------------------------------------------
-
-        prompt_builder = getattr(
-            QuizPrompts,
-            "build_generation_prompt",
-            None,
-        )
-
-        if callable(prompt_builder):
-
-            try:
-
-                return prompt_builder(
-                    content=content,
-                    number_of_questions=(
-                        configuration.number_of_questions
-                    ),
-                    question_types=(
-                        configuration.question_types
-                    ),
-                    difficulty=configuration.difficulty,
-                    topic=topic_text,
-                    metadata=source_metadata,
-                )
-
-            except TypeError:
-                # Fall back to local prompt if the prompt
-                # helper has a different signature.
-                pass
-
-        # ----------------------------------------------------
-        # Local fallback prompt.
+        # Local prompt builder.
         # ----------------------------------------------------
 
         type_instructions = (
@@ -360,8 +312,7 @@ IMPORTANT RULES:
 6. For MCQ questions, provide at least four options.
 7. For MCQ, correct_answer must exactly match one option.
 8. For True/False, correct_answer must be true or false.
-9. Short and long answer questions may contain a reference
-   answer.
+9. Short and long answer questions may contain a reference answer.
 10. Return ONLY valid JSON.
 11. Do not include Markdown code fences.
 12. Return an array of question objects.
@@ -373,7 +324,12 @@ Required JSON format:
     "id": "q1",
     "text": "Question text",
     "type": "mcq",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+    ],
     "correct_answer": "Option A",
     "marks": 1,
     "difficulty": "easy",
@@ -389,40 +345,33 @@ Required JSON format:
         self,
         question_types: List[QuestionType],
     ) -> str:
-
         instructions: List[str] = []
 
         if QuestionType.MCQ in question_types:
-
             instructions.append(
                 "- MCQ: 4 plausible options and one "
                 "correct answer."
             )
 
         if QuestionType.TRUE_FALSE in question_types:
-
             instructions.append(
                 "- TRUE/FALSE: correct_answer must be "
                 "true or false."
             )
 
         if QuestionType.SHORT_ANSWER in question_types:
-
             instructions.append(
                 "- SHORT ANSWER: concise question with "
                 "a reference answer."
             )
 
         if QuestionType.LONG_ANSWER in question_types:
-
             instructions.append(
                 "- LONG ANSWER: descriptive question "
                 "requiring a detailed response."
             )
 
-        return "\n".join(
-            instructions
-        )
+        return "\n".join(instructions)
 
     # ========================================================
     # GEMMA CALL
@@ -446,7 +395,6 @@ Required JSON format:
         )
 
         for method_name in methods:
-
             method = getattr(
                 self.gemma_service,
                 method_name,
@@ -488,7 +436,6 @@ Required JSON format:
         # ----------------------------------------------------
 
         if isinstance(response, list):
-
             return self._validate_raw_list(
                 response
             )
@@ -498,12 +445,8 @@ Required JSON format:
         # ----------------------------------------------------
 
         if isinstance(response, Mapping):
-
             if "questions" in response:
-
-                questions = response[
-                    "questions"
-                ]
+                questions = response["questions"]
 
                 if isinstance(
                     questions,
@@ -514,8 +457,11 @@ Required JSON format:
                     )
 
             # Single question object.
-            if "text" in response or "question" in response:
 
+            if (
+                "text" in response
+                or "question" in response
+            ):
                 return [response]
 
             raise QuestionGenerationError(
@@ -528,19 +474,13 @@ Required JSON format:
         # ----------------------------------------------------
 
         if isinstance(response, str):
-
             cleaned = self._clean_json_response(
                 response
             )
 
             try:
-
-                parsed = json.loads(
-                    cleaned
-                )
-
+                parsed = json.loads(cleaned)
             except json.JSONDecodeError as exc:
-
                 raise QuestionGenerationError(
                     "Gemma returned invalid JSON."
                 ) from exc
@@ -549,7 +489,6 @@ Required JSON format:
                 parsed,
                 Mapping,
             ):
-
                 parsed = parsed.get(
                     "questions",
                     parsed,
@@ -559,7 +498,6 @@ Required JSON format:
                 parsed,
                 list,
             ):
-
                 if isinstance(
                     parsed,
                     Mapping,
@@ -606,6 +544,7 @@ Required JSON format:
         text = text.strip()
 
         # Find JSON array if Gemma added surrounding text.
+
         start = text.find("[")
         end = text.rfind("]")
 
@@ -620,7 +559,6 @@ Required JSON format:
         self,
         questions: List[Any],
     ) -> List[Mapping[str, Any]]:
-
         if not questions:
             raise QuestionGenerationError(
                 "Gemma returned no questions."
@@ -629,7 +567,6 @@ Required JSON format:
         valid: List[Mapping[str, Any]] = []
 
         for item in questions:
-
             if not isinstance(
                 item,
                 Mapping,
@@ -666,9 +603,7 @@ Required JSON format:
             raw_questions,
             start=1,
         ):
-
             try:
-
                 question_data = (
                     self._normalize_raw_question(
                         raw,
@@ -759,7 +694,6 @@ Required JSON format:
         # ----------------------------------------------------
 
         if question_type == QuestionType.TRUE_FALSE:
-
             options = [
                 "True",
                 "False",
@@ -797,9 +731,7 @@ Required JSON format:
             )
 
         if source_metadata:
-
             for key, value in source_metadata.items():
-
                 metadata.setdefault(
                     key,
                     value,
@@ -846,7 +778,6 @@ Required JSON format:
             answer,
             str,
         ):
-
             value = answer.strip().lower()
 
             if value in {
@@ -882,11 +813,9 @@ Required JSON format:
         """
 
         unique: List[Question] = []
-
         seen = set()
 
         for question in questions:
-
             normalized_text = self._normalize_text(
                 question.text
             )

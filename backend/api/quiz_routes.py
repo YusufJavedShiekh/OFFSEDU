@@ -1,5 +1,7 @@
 from flask import Blueprint, jsonify, request
 
+from ai.quiz_service import quiz_service
+
 
 quiz_bp = Blueprint(
     "quiz",
@@ -10,6 +12,8 @@ quiz_bp = Blueprint(
 
 @quiz_bp.route("/", methods=["POST"])
 def generate_quiz():
+    """Generate an AI-powered quiz."""
+
     data = request.get_json(silent=True) or {}
 
     topic = data.get("topic", "").strip()
@@ -35,11 +39,28 @@ def generate_quiz():
             "error": "num_questions must be between 1 and 50"
         }), 400
 
-    # AI quiz generation will be connected later.
-    return jsonify({
-        "success": True,
-        "topic": topic,
-        "num_questions": num_questions,
-        "questions": [],
-        "message": "AI quiz service is not connected yet."
-    })
+    try:
+        quiz = quiz_service.generate_quiz(
+            topic=topic,
+            num_questions=num_questions
+        )
+
+        return jsonify({
+            "success": True,
+            "topic": topic,
+            "num_questions": num_questions,
+            "questions": quiz
+        })
+
+    except ValueError as error:
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 400
+
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "error": "Unable to generate quiz.",
+            "details": str(error)
+        }), 500

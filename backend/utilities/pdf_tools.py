@@ -83,7 +83,7 @@ class PDFResult:
         return {
             "success": self.success,
             "output_path": self.output_path,
-            "input_files": self.input_files,
+            "input_files": list(self.input_files),
             "page_count": self.page_count,
             "output_size": self.output_size,
             "operation": self.operation,
@@ -113,7 +113,7 @@ class PDFInfo:
             "page_count": self.page_count,
             "pdf_version": self.pdf_version,
             "encrypted": self.encrypted,
-            "metadata": self.metadata,
+            "metadata": dict(self.metadata),
         }
 
 
@@ -171,14 +171,36 @@ class PDFTools:
                 f"PDF path is not a file: {path}"
             )
 
-        if path.stat().st_size == 0:
+        if path.suffix.lower() != ".pdf":
+            raise InvalidPDFError(
+                f"File is not a PDF: {path.name}"
+            )
+
+        try:
+            file_size = path.stat().st_size
+        except OSError as exc:
+            raise InvalidPDFError(
+                f"Unable to read PDF information: {path.name}"
+            ) from exc
+
+        if file_size == 0:
             raise InvalidPDFError(
                 f"PDF is empty: {path.name}"
             )
 
-        if path.suffix.lower() != ".pdf":
+        try:
+            with path.open("rb") as file:
+                header = file.read(5)
+
+        except (OSError, PermissionError) as exc:
             raise InvalidPDFError(
-                f"File is not a PDF: {path.name}"
+                f"PDF is not readable: {path.name}"
+            ) from exc
+
+        if header != b"%PDF-":
+            raise InvalidPDFError(
+                f"File does not contain a valid PDF header: "
+                f"{path.name}"
             )
 
     @classmethod
@@ -188,13 +210,22 @@ class PDFTools:
     ) -> PdfReader:
         """Open and validate a PDF."""
 
-        path = Path(pdf_path)
+        if pdf_path is None:
+            raise InvalidPDFError(
+                "PDF path cannot be empty."
+            )
+
+        try:
+            path = Path(pdf_path)
+        except (TypeError, ValueError) as exc:
+            raise InvalidPDFError(
+                f"Invalid PDF path: {exc}"
+            ) from exc
 
         cls._validate_file(path)
 
         try:
             reader = PdfReader(str(path))
-
         except Exception as exc:
             raise InvalidPDFError(
                 f"Unable to open PDF '{path.name}': {exc}"
@@ -203,18 +234,26 @@ class PDFTools:
         if reader.is_encrypted:
             raise EncryptedPDFError(
                 f"PDF '{path.name}' is encrypted and "
-                f"requires a password."
+                "requires a password."
             )
 
         try:
             len(reader.pages)
-
         except Exception as exc:
             raise InvalidPDFError(
                 f"PDF pages cannot be read: {exc}"
             ) from exc
 
         return reader
+
+    @staticmethod
+    def _validate_overwrite(overwrite: bool) -> None:
+        """Validate overwrite parameter."""
+
+        if not isinstance(overwrite, bool):
+            raise OutputFileError(
+                "overwrite must be a boolean."
+            )
 
     def validate_pdf(
         self,
@@ -243,18 +282,29 @@ class PDFTools:
     ) -> PDFInfo:
         """Return complete PDF information."""
 
-        path = Path(pdf_path)
+        reader = self._open_reader(pdf_path)
 
-        reader = self._open_reader(path)
+        try:
+            path = Path(pdf_path)
+        except (TypeError, ValueError) as exc:
+            raise InvalidPDFError(
+                f"Invalid PDF path: {exc}"
+            ) from exc
 
         metadata = self._extract_metadata(reader)
-
         pdf_version = self._get_pdf_version(path)
+
+        try:
+            file_size = path.stat().st_size
+        except OSError as exc:
+            raise InvalidPDFError(
+                f"Unable to read PDF information: {path.name}"
+            ) from exc
 
         return PDFInfo(
             path=str(path),
             filename=path.name,
-            file_size=path.stat().st_size,
+            file_size=file_size,
             page_count=len(reader.pages),
             pdf_version=pdf_version,
             encrypted=bool(reader.is_encrypted),
@@ -268,7 +318,6 @@ class PDFTools:
         """Extract PDF metadata."""
 
         reader = self._open_reader(pdf_path)
-
         return self._extract_metadata(reader)
 
     @staticmethod
@@ -297,9 +346,7 @@ class PDFTools:
             "creator": metadata.get("/Creator"),
             "producer": metadata.get("/Producer"),
             "creation_date": metadata.get("/CreationDate"),
-            "modification_date": metadata.get(
-                "/ModDate"
-            ),
+            "modification_date": metadata.get("/ModDate"),
         }
 
     @staticmethod
@@ -309,7 +356,7 @@ class PDFTools:
         """Read PDF version from the file header."""
 
         try:
-            with open(path, "rb") as file:
+            with path.open("rb") as file:
                 header = file.read(16)
 
             if header.startswith(b"%PDF-"):
@@ -317,10 +364,9 @@ class PDFTools:
                     "ascii",
                     errors="ignore",
                 )
-
                 return version
 
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             pass
 
         return None
@@ -336,7 +382,6 @@ class PDFTools:
         """Return the number of pages."""
 
         reader = self._open_reader(pdf_path)
-
         return len(reader.pages)
 
     def get_page_info(
@@ -354,7 +399,6 @@ class PDFTools:
         reader = self._open_reader(pdf_path)
 
         if page_number is not None:
-
             self._validate_page_number(
                 page_number,
                 len(reader.pages),
@@ -365,7 +409,7 @@ class PDFTools:
                 page_number,
             )
 
-        result = []
+        result: List[PDFPageInfo] = []
 
         for index, page in enumerate(
             reader.pages,
@@ -397,16 +441,14 @@ class PDFTools:
                 f"{page_number}: {exc}"
             ) from exc
 
-        rotation = page.get(
-            "/Rotate",
-            0,
-        )
+        rotation = page.get("/Rotate", 0)
 
         try:
             rotation = int(rotation or 0)
-
         except (TypeError, ValueError):
             rotation = 0
+
+        rotation %= 360
 
         return PDFPageInfo(
             page_number=page_number,
@@ -431,9 +473,9 @@ class PDFTools:
         Input order is preserved.
         """
 
-        files = self._normalize_pdf_files(
-            input_files
-        )
+        self._validate_overwrite(overwrite)
+
+        files = self._normalize_pdf_files(input_files)
 
         if len(files) < 2:
             raise PDFOperationError(
@@ -441,6 +483,7 @@ class PDFTools:
             )
 
         readers = []
+        output: Optional[Path] = None
 
         try:
             for path in files:
@@ -455,12 +498,15 @@ class PDFTools:
                 overwrite=overwrite,
             )
 
-            writer = PdfWriter()
+            self._ensure_output_is_not_input(
+                output,
+                files,
+            )
 
+            writer = PdfWriter()
             total_pages = 0
 
             for reader in readers:
-
                 for page in reader.pages:
                     writer.add_page(page)
                     total_pages += 1
@@ -488,9 +534,14 @@ class PDFTools:
             )
 
         except PDFToolsError:
+            if output is not None:
+                self._cleanup_output(output)
             raise
 
         except Exception as exc:
+            if output is not None:
+                self._cleanup_output(output)
+
             raise PDFOperationError(
                 f"Failed to merge PDFs: {exc}"
             ) from exc
@@ -509,61 +560,89 @@ class PDFTools:
         Split every page of a PDF into a separate PDF.
         """
 
-        source = Path(pdf_path)
+        self._validate_overwrite(overwrite)
 
+        source = self._normalize_single_pdf_path(pdf_path)
         reader = self._open_reader(source)
 
-        output_dir = (
-            Path(output_directory)
-            if output_directory is not None
-            else source.parent / f"{source.stem}_pages"
-        )
+        if output_directory is None:
+            output_dir = (
+                source.parent
+                / f"{source.stem}_pages"
+            )
+        else:
+            try:
+                output_dir = Path(output_directory)
+            except (TypeError, ValueError) as exc:
+                raise OutputFileError(
+                    f"Invalid output directory: {exc}"
+                ) from exc
 
-        output_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        try:
+            output_dir.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+        except OSError as exc:
+            raise OutputFileError(
+                f"Unable to create output directory: "
+                f"{output_dir}"
+            ) from exc
 
-        results = []
+        results: List[PDFResult] = []
 
         for index, page in enumerate(
             reader.pages,
             start=1,
         ):
-
             output = (
                 output_dir
                 / f"{source.stem}_page_{index}.pdf"
             )
 
             if output.exists() and not overwrite:
-                output = self._find_available_path(
-                    output
-                )
+                output = self._find_available_path(output)
+
+            self._ensure_output_is_not_input(
+                output,
+                [source],
+            )
 
             writer = PdfWriter()
             writer.add_page(page)
 
-            self._write_pdf(
-                writer,
-                output,
-            )
-
-            self._validate_output(
-                output,
-                expected_pages=1,
-            )
-
-            results.append(
-                PDFResult(
-                    success=True,
-                    output_path=str(output),
-                    input_files=[str(source)],
-                    page_count=1,
-                    output_size=output.stat().st_size,
-                    operation="split",
+            try:
+                self._write_pdf(
+                    writer,
+                    output,
                 )
-            )
+
+                self._validate_output(
+                    output,
+                    expected_pages=1,
+                )
+
+                results.append(
+                    PDFResult(
+                        success=True,
+                        output_path=str(output),
+                        input_files=[str(source)],
+                        page_count=1,
+                        output_size=output.stat().st_size,
+                        operation="split",
+                    )
+                )
+
+            except PDFToolsError:
+                self._cleanup_output(output)
+                raise
+
+            except Exception as exc:
+                self._cleanup_output(output)
+
+                raise PDFOperationError(
+                    f"Failed to split page {index}: {exc}"
+                ) from exc
 
         return results
 
@@ -582,18 +661,15 @@ class PDFTools:
         Extract selected pages from a PDF.
 
         Examples:
-
             pages="1-5"
-
             pages="1,3,7"
-
             pages="1-3,7,10-12"
-
             pages=[1, 3, 7]
         """
 
-        source = Path(pdf_path)
+        self._validate_overwrite(overwrite)
 
+        source = self._normalize_single_pdf_path(pdf_path)
         reader = self._open_reader(source)
 
         total_pages = len(reader.pages)
@@ -615,23 +691,39 @@ class PDFTools:
             overwrite=overwrite,
         )
 
+        self._ensure_output_is_not_input(
+            output,
+            [source],
+        )
+
         writer = PdfWriter()
 
         for page_number in page_numbers:
-
             writer.add_page(
                 reader.pages[page_number - 1]
             )
 
-        self._write_pdf(
-            writer,
-            output,
-        )
+        try:
+            self._write_pdf(
+                writer,
+                output,
+            )
 
-        self._validate_output(
-            output,
-            expected_pages=len(page_numbers),
-        )
+            self._validate_output(
+                output,
+                expected_pages=len(page_numbers),
+            )
+
+        except PDFToolsError:
+            self._cleanup_output(output)
+            raise
+
+        except Exception as exc:
+            self._cleanup_output(output)
+
+            raise PDFOperationError(
+                f"Failed to extract pages: {exc}"
+            ) from exc
 
         return PDFResult(
             success=True,
@@ -663,13 +755,25 @@ class PDFTools:
             [1, 3, 5]
         """
 
+        if (
+            not isinstance(total_pages, int)
+            or isinstance(total_pages, bool)
+        ):
+            raise InvalidPageRangeError(
+                "total_pages must be an integer."
+            )
+
         if total_pages <= 0:
             raise InvalidPageRangeError(
                 "PDF contains no pages."
             )
 
-        if isinstance(pages, str):
+        if pages is None:
+            raise InvalidPageRangeError(
+                "pages cannot be empty."
+            )
 
+        if isinstance(pages, str):
             value = pages.strip()
 
             if not value:
@@ -684,10 +788,8 @@ class PDFTools:
             ]
 
         else:
-
             try:
                 tokens = list(pages)
-
             except TypeError as exc:
                 raise InvalidPageRangeError(
                     "pages must be a string or iterable "
@@ -703,8 +805,12 @@ class PDFTools:
 
         for token in tokens:
 
-            if isinstance(token, int):
+            if isinstance(token, bool):
+                raise InvalidPageError(
+                    "Page number must be an integer."
+                )
 
+            if isinstance(token, int):
                 cls._validate_page_number(
                     token,
                     total_pages,
@@ -715,8 +821,12 @@ class PDFTools:
 
             token = str(token).strip()
 
-            if "-" in token:
+            if not token:
+                raise InvalidPageRangeError(
+                    "Empty page selection is not valid."
+                )
 
+            if "-" in token:
                 parts = token.split("-")
 
                 if len(parts) != 2:
@@ -726,9 +836,17 @@ class PDFTools:
 
                 start_text, end_text = parts
 
+                if (
+                    not start_text.strip()
+                    or not end_text.strip()
+                ):
+                    raise InvalidPageRangeError(
+                        f"Invalid page range: {token}"
+                    )
+
                 try:
-                    start = int(start_text)
-                    end = int(end_text)
+                    start = int(start_text.strip())
+                    end = int(end_text.strip())
 
                 except ValueError as exc:
                     raise InvalidPageRangeError(
@@ -738,7 +856,7 @@ class PDFTools:
                 if start > end:
                     raise InvalidPageRangeError(
                         f"Invalid range '{token}': "
-                        f"start is greater than end."
+                        "start is greater than end."
                     )
 
                 cls._validate_page_number(
@@ -756,7 +874,6 @@ class PDFTools:
                 )
 
             else:
-
                 try:
                     page_number = int(token)
 
@@ -772,7 +889,6 @@ class PDFTools:
 
                 selected.add(page_number)
 
-        # Preserve natural page order.
         return sorted(selected)
 
     @staticmethod
@@ -782,7 +898,10 @@ class PDFTools:
     ) -> None:
         """Validate a 1-based page number."""
 
-        if not isinstance(page_number, int):
+        if (
+            isinstance(page_number, bool)
+            or not isinstance(page_number, int)
+        ):
             raise InvalidPageError(
                 "Page number must be an integer."
             )
@@ -790,7 +909,7 @@ class PDFTools:
         if page_number < 1:
             raise InvalidPageError(
                 f"Invalid page number: {page_number}. "
-                f"Pages start at 1."
+                "Pages start at 1."
             )
 
         if page_number > total_pages:
@@ -812,31 +931,48 @@ class PDFTools:
     ) -> Path:
         """Prepare a safe PDF output path."""
 
-        if output_path is not None:
+        if not isinstance(overwrite, bool):
+            raise OutputFileError(
+                "overwrite must be a boolean."
+            )
 
-            output = Path(output_path)
+        if output_path is not None:
+            try:
+                output = Path(output_path)
+            except (TypeError, ValueError) as exc:
+                raise OutputFileError(
+                    f"Invalid output path: {exc}"
+                ) from exc
+
+            if not output.name:
+                raise OutputFileError(
+                    "Output path must include a filename."
+                )
 
             if output.suffix.lower() != ".pdf":
                 output = output.with_suffix(".pdf")
 
         else:
-
-            if len(input_files) == 1:
-                output = (
-                    input_files[0].parent
-                    / default_name
+            if not input_files:
+                raise OutputFileError(
+                    "At least one input file is required."
                 )
 
-            else:
-                output = (
-                    input_files[0].parent
-                    / default_name
-                )
+            output = (
+                input_files[0].parent
+                / default_name
+            )
 
-        output.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        try:
+            output.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+        except OSError as exc:
+            raise OutputFileError(
+                f"Unable to create output directory: "
+                f"{output.parent}"
+            ) from exc
 
         if output.exists() and not overwrite:
             output = PDFTools._find_available_path(
@@ -844,6 +980,31 @@ class PDFTools:
             )
 
         return output
+
+    @staticmethod
+    def _ensure_output_is_not_input(
+        output_path: Path,
+        input_files: List[Path],
+    ) -> None:
+        """Prevent output from replacing an input PDF."""
+
+        try:
+            output_resolved = output_path.resolve()
+
+            for input_file in input_files:
+                if output_resolved == input_file.resolve():
+                    raise OutputFileError(
+                        "Output PDF cannot be the same as "
+                        "an input PDF."
+                    )
+
+        except OutputFileError:
+            raise
+
+        except OSError as exc:
+            raise OutputFileError(
+                f"Unable to validate output path: {exc}"
+            ) from exc
 
     @staticmethod
     def _find_available_path(
@@ -854,7 +1015,6 @@ class PDFTools:
         counter = 1
 
         while True:
-
             candidate = (
                 path.parent
                 / f"{path.stem}_{counter}{path.suffix}"
@@ -864,6 +1024,28 @@ class PDFTools:
                 return candidate
 
             counter += 1
+
+    @staticmethod
+    def _normalize_single_pdf_path(
+        pdf_path: str | Path,
+    ) -> Path:
+        """Normalize one PDF path safely."""
+
+        if pdf_path is None:
+            raise InvalidPDFError(
+                "PDF path cannot be empty."
+            )
+
+        try:
+            path = Path(pdf_path)
+        except (TypeError, ValueError) as exc:
+            raise InvalidPDFError(
+                f"Invalid PDF path: {exc}"
+            ) from exc
+
+        PDFTools._validate_file(path)
+
+        return path
 
     # ==================================================================
     # Writing
@@ -877,12 +1059,12 @@ class PDFTools:
         """Write a PdfWriter to disk."""
 
         try:
+            output_path.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
 
-            with open(
-                output_path,
-                "wb",
-            ) as file:
-
+            with output_path.open("wb") as file:
                 writer.write(file)
 
         except Exception as exc:
@@ -908,15 +1090,45 @@ class PDFTools:
                 "Output PDF was not created."
             )
 
-        if output_path.stat().st_size == 0:
+        if not output_path.is_file():
+            raise OutputFileError(
+                "Output path is not a file."
+            )
+
+        try:
+            file_size = output_path.stat().st_size
+        except OSError as exc:
+            raise OutputFileError(
+                "Unable to read output PDF information."
+            ) from exc
+
+        if file_size == 0:
             raise OutputFileError(
                 "Output PDF is empty."
             )
 
-        try:
-            reader = PdfReader(
-                str(output_path)
+        if output_path.suffix.lower() != ".pdf":
+            raise OutputFileError(
+                "Output file does not have a .pdf extension."
             )
+
+        try:
+            with output_path.open("rb") as file:
+                header = file.read(5)
+
+        except OSError as exc:
+            raise OutputFileError(
+                f"Unable to inspect generated PDF: {exc}"
+            ) from exc
+
+        if header != b"%PDF-":
+            raise OutputFileError(
+                "Generated file does not contain "
+                "a valid PDF header."
+            )
+
+        try:
+            reader = PdfReader(str(output_path))
 
             if reader.is_encrypted:
                 raise OutputFileError(
@@ -943,6 +1155,20 @@ class PDFTools:
                 f"Generated PDF failed validation: {exc}"
             ) from exc
 
+    @staticmethod
+    def _cleanup_output(
+        output_path: Path,
+    ) -> None:
+        """Remove a partially generated output file."""
+
+        try:
+            if output_path.exists():
+                output_path.unlink()
+
+        except OSError:
+            # Cleanup failure must not hide the original exception.
+            pass
+
     # ==================================================================
     # Helpers
     # ==================================================================
@@ -953,6 +1179,11 @@ class PDFTools:
     ) -> List[Path]:
         """Normalize and validate a list of PDFs."""
 
+        if input_files is None:
+            raise InvalidPDFError(
+                "input_files cannot be empty."
+            )
+
         if isinstance(
             input_files,
             (str, Path),
@@ -960,14 +1191,13 @@ class PDFTools:
             files = [Path(input_files)]
 
         else:
-
             try:
                 files = [
                     Path(file_path)
                     for file_path in input_files
                 ]
 
-            except TypeError as exc:
+            except (TypeError, ValueError) as exc:
                 raise InvalidPDFError(
                     "input_files must be an iterable "
                     "of PDF paths."
@@ -978,7 +1208,13 @@ class PDFTools:
                 "At least one PDF is required."
             )
 
-        return files
+        normalized: List[Path] = []
+
+        for path in files:
+            PDFTools._validate_file(path)
+            normalized.append(path)
+
+        return normalized
 
 
 # ======================================================================

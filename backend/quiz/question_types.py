@@ -75,40 +75,17 @@ class QuizConfigurationError(ValueError):
 class Question:
     """
     Represents a single quiz question.
-
-    Example MCQ:
-
-        Question(
-            id="q1",
-            text="What is RAM?",
-            type=QuestionType.MCQ,
-            options=["A", "B", "C", "D"],
-            correct_answer="A",
-            marks=1,
-            difficulty=Difficulty.EASY,
-        )
     """
 
     id: str
     text: str
-
     type: QuestionType = QuestionType.MCQ
-
-    options: List[str] = field(
-        default_factory=list
-    )
-
+    options: List[str] = field(default_factory=list)
     correct_answer: Any = None
-
     marks: float = 1.0
-
     difficulty: Difficulty = Difficulty.MEDIUM
-
     explanation: Optional[str] = None
-
-    metadata: Dict[str, Any] = field(
-        default_factory=dict
-    )
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Normalize and validate question data."""
@@ -116,13 +93,8 @@ class Question:
         self.id = str(self.id).strip()
         self.text = str(self.text).strip()
 
-        self.type = normalize_question_type(
-            self.type
-        )
-
-        self.difficulty = normalize_difficulty(
-            self.difficulty
-        )
+        self.type = normalize_question_type(self.type)
+        self.difficulty = normalize_difficulty(self.difficulty)
 
         try:
             self.marks = float(self.marks)
@@ -131,7 +103,22 @@ class Question:
                 f"Invalid marks for question '{self.id}'."
             ) from exc
 
+        if not isinstance(self.metadata, Mapping):
+            raise QuestionValidationError(
+                f"Metadata for question '{self.id}' must be a dictionary."
+            )
+
+        self.metadata = dict(self.metadata)
         self.options = self._normalize_options()
+
+        # Normalize True/False answers before validation.
+        if self.type == QuestionType.TRUE_FALSE:
+            boolean_value = normalize_boolean(self.correct_answer)
+
+            if boolean_value is not None:
+                self.correct_answer = (
+                    "True" if boolean_value else "False"
+                )
 
         self.validate()
 
@@ -154,8 +141,7 @@ class Question:
 
         if self.marks < 0:
             raise QuestionValidationError(
-                f"Marks cannot be negative for question "
-                f"'{self.id}'."
+                f"Marks cannot be negative for question '{self.id}'."
             )
 
         # ----------------------------------------------------
@@ -163,17 +149,14 @@ class Question:
         # ----------------------------------------------------
 
         if self.type == QuestionType.MCQ:
-
             if len(self.options) < 2:
                 raise QuestionValidationError(
-                    f"MCQ '{self.id}' must have at least "
-                    "two options."
+                    f"MCQ '{self.id}' must have at least two options."
                 )
 
             if self.correct_answer is None:
                 raise QuestionValidationError(
-                    f"MCQ '{self.id}' must have a "
-                    "correct answer."
+                    f"MCQ '{self.id}' must have a correct answer."
                 )
 
             if not self._answer_exists_in_options():
@@ -187,27 +170,30 @@ class Question:
         # ----------------------------------------------------
 
         elif self.type == QuestionType.TRUE_FALSE:
-
             if self.correct_answer is None:
                 raise QuestionValidationError(
                     f"True/False question '{self.id}' "
                     "must have a correct answer."
                 )
 
-            if normalize_boolean(
+            boolean_value = normalize_boolean(
                 self.correct_answer
-            ) is None:
+            )
+
+            if boolean_value is None:
                 raise QuestionValidationError(
                     f"True/False question '{self.id}' "
                     "must have a valid True/False answer."
                 )
 
-            # True/False questions don't need custom options.
-            if not self.options:
-                self.options = [
-                    "True",
-                    "False",
-                ]
+            self.correct_answer = (
+                "True" if boolean_value else "False"
+            )
+
+            self.options = [
+                "True",
+                "False",
+            ]
 
         # ----------------------------------------------------
         # SHORT / LONG ANSWER
@@ -217,9 +203,8 @@ class Question:
             QuestionType.SHORT_ANSWER,
             QuestionType.LONG_ANSWER,
         }:
-
-            # Subjective questions may have a reference
-            # answer, but it is not mandatory.
+            # Subjective questions may have a reference answer,
+            # but it is not mandatory.
             pass
 
     # ========================================================
@@ -252,9 +237,6 @@ class Question:
     ) -> "Question":
         """
         Create a Question from a dictionary.
-
-        Useful for converting Gemma-generated JSON into a
-        validated Question object.
         """
 
         if not isinstance(data, Mapping):
@@ -277,7 +259,8 @@ class Question:
                 [],
             ),
             correct_answer=data.get(
-                "correct_answer"
+                "correct_answer",
+                data.get("answer"),
             ),
             marks=data.get(
                 "marks",
@@ -318,7 +301,6 @@ class Question:
         normalized: List[str] = []
 
         for option in self.options:
-
             value = str(option).strip()
 
             if value and value not in normalized:
@@ -336,29 +318,15 @@ class Question:
             self.correct_answer
         )
 
-        for option in self.options:
+        for index, option in enumerate(self.options):
+            normalized_option = normalize_answer(option)
 
-            if correct == normalize_answer(option):
+            if correct == normalized_option:
                 return True
 
-        # Also support answers such as "A", "B", "C", "D"
-        # when options are stored with prefixes.
-        if (
-            isinstance(self.correct_answer, str)
-            and len(self.correct_answer.strip()) == 1
-        ):
-            letter = self.correct_answer.strip().lower()
-
-            if letter in {
-                "a",
-                "b",
-                "c",
-                "d",
-            }:
-
-                index = ord(letter) - ord("a")
-
-                if 0 <= index < len(self.options):
+            # Support answers such as A, B, C, D.
+            if correct in {"a", "b", "c", "d"}:
+                if index == ord(correct) - ord("a"):
                     return True
 
         return False
@@ -439,6 +407,17 @@ class QuizConfiguration:
             self.difficulty
         )
 
+        if self.question_types is None:
+            self.question_types = []
+
+        if not isinstance(
+            self.question_types,
+            (list, tuple),
+        ):
+            raise QuizConfigurationError(
+                "question_types must be a list."
+            )
+
         self.question_types = [
             normalize_question_type(question_type)
             for question_type
@@ -451,6 +430,25 @@ class QuizConfiguration:
                 self.question_types
             )
         )
+
+        if not isinstance(self.allow_partial_marks, bool):
+            self.allow_partial_marks = (
+                normalize_boolean(
+                    self.allow_partial_marks
+                )
+            )
+
+            if self.allow_partial_marks is None:
+                raise QuizConfigurationError(
+                    "allow_partial_marks must be a boolean."
+                )
+
+        if not isinstance(self.metadata, Mapping):
+            raise QuizConfigurationError(
+                "metadata must be a dictionary."
+            )
+
+        self.metadata = dict(self.metadata)
 
         self.validate()
 
@@ -571,16 +569,6 @@ def normalize_question_type(
 ) -> QuestionType:
     """
     Normalize question type aliases.
-
-    Examples:
-
-        "MCQ"
-        "multiple choice"
-        "multiple-choice"
-
-    all become:
-
-        QuestionType.MCQ
     """
 
     if isinstance(
@@ -636,12 +624,6 @@ def normalize_difficulty(
 ) -> Difficulty:
     """
     Normalize difficulty aliases.
-
-    Examples:
-
-        "Easy"   → Difficulty.EASY
-        "medium" → Difficulty.MEDIUM
-        "HARD"   → Difficulty.HARD
     """
 
     if isinstance(
@@ -688,8 +670,7 @@ def normalize_answer(
     """
     Normalize an answer for basic comparisons.
 
-    This is intentionally lightweight. Detailed scoring logic
-    remains inside scoring.py.
+    Detailed scoring logic remains inside scoring.py.
     """
 
     if answer is None:
@@ -703,23 +684,13 @@ def normalize_answer(
     )
 
     # Remove common option formatting.
-    prefixes = (
-        "option a",
-        "option b",
-        "option c",
-        "option d",
+    value = re.sub(
+        r"^(?:option\s+)?([abcd])[\.\):\-]\s*",
+        r"\1 ",
+        value,
     )
 
-    for prefix in prefixes:
-
-        if value.startswith(prefix):
-
-            remaining = value[len(prefix):].strip()
-
-            if not remaining:
-                return prefix[-1]
-
-    return value
+    return value.strip()
 
 
 def normalize_boolean(
@@ -734,14 +705,22 @@ def normalize_boolean(
         None if invalid
     """
 
-    if isinstance(value, bool):
+    if isinstance(
+        value,
+        bool,
+    ):
         return value
 
-    if isinstance(value, int) and value in (0, 1):
+    if isinstance(
+        value,
+        int,
+    ) and value in (0, 1):
         return bool(value)
 
-    if isinstance(value, str):
-
+    if isinstance(
+        value,
+        str,
+    ):
         normalized = (
             value.strip().lower()
         )
@@ -778,9 +757,6 @@ def validate_question(
     Validate a question.
 
     Returns True when valid.
-
-    Raises:
-        QuestionValidationError
     """
 
     if isinstance(
@@ -813,9 +789,6 @@ def validate_quiz_configuration(
     Validate quiz configuration.
 
     Returns True when valid.
-
-    Raises:
-        QuizConfigurationError
     """
 
     if isinstance(
@@ -881,7 +854,9 @@ def create_quiz_configuration(
     marks_per_question: float = 1.0,
     negative_marks: float = 0.0,
     allow_partial_marks: bool = False,
-    metadata: Optional[Mapping[str, Any]] = None,
+    metadata: Optional[
+        Mapping[str, Any]
+    ] = None,
 ) -> QuizConfiguration:
     """Convenience function for creating quiz configuration."""
 
@@ -889,7 +864,8 @@ def create_quiz_configuration(
         number_of_questions=number_of_questions,
         question_types=(
             question_types
-            or [QuestionType.MCQ]
+            if question_types is not None
+            else [QuestionType.MCQ]
         ),
         difficulty=difficulty,
         time_limit=time_limit,

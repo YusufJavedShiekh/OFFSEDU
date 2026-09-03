@@ -1,5 +1,7 @@
 from flask import Blueprint, jsonify, request
 
+from ai.explanation_service import explanation_service
+
 
 explanation_bp = Blueprint(
     "explanation",
@@ -10,6 +12,8 @@ explanation_bp = Blueprint(
 
 @explanation_bp.route("/", methods=["POST"])
 def explain():
+    """Generate an AI explanation for a topic."""
+
     data = request.get_json(silent=True) or {}
 
     topic = data.get("topic", "").strip()
@@ -20,9 +24,24 @@ def explain():
             "error": "Topic is required"
         }), 400
 
-    # AI explanation service will be connected later.
-    return jsonify({
-        "success": True,
-        "topic": topic,
-        "explanation": "AI explanation service is not connected yet."
-    })
+    try:
+        explanation = explanation_service.explain(topic)
+
+        return jsonify({
+            "success": True,
+            "topic": topic,
+            "explanation": explanation
+        })
+
+    except ValueError as error:
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 400
+
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "error": "Unable to generate explanation.",
+            "details": str(error)
+        }), 500

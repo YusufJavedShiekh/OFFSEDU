@@ -2,6 +2,7 @@
 StudyGemma - Image to PDF Utility
 
 Features:
+
 - Single image -> PDF
 - Multiple images -> multi-page PDF
 - JPEG, PNG, WEBP, BMP and TIFF support
@@ -19,6 +20,7 @@ Features:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -27,6 +29,11 @@ from PIL import Image, ImageOps
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+
+
+# ======================================================================
+# Exceptions
+# ======================================================================
 
 
 class ImageToPDFError(Exception):
@@ -49,6 +56,11 @@ class PDFGenerationError(ImageToPDFError):
     """Raised when PDF generation fails."""
 
 
+# ======================================================================
+# Result
+# ======================================================================
+
+
 @dataclass
 class ImagePDFResult:
     """Result returned after image-to-PDF conversion."""
@@ -56,13 +68,10 @@ class ImagePDFResult:
     success: bool
     output_path: Optional[str] = None
     input_files: List[str] = field(default_factory=list)
-
     page_count: int = 0
     output_size: int = 0
-
     page_size: Optional[str] = None
     layout: Optional[str] = None
-
     error: Optional[str] = None
 
     def to_dict(self) -> dict:
@@ -71,13 +80,18 @@ class ImagePDFResult:
         return {
             "success": self.success,
             "output_path": self.output_path,
-            "input_files": self.input_files,
+            "input_files": list(self.input_files),
             "page_count": self.page_count,
             "output_size": self.output_size,
             "page_size": self.page_size,
             "layout": self.layout,
             "error": self.error,
         }
+
+
+# ======================================================================
+# Image to PDF
+# ======================================================================
 
 
 class ImageToPDF:
@@ -148,7 +162,7 @@ class ImageToPDF:
         background: str = "white",
     ) -> ImagePDFResult:
         """
-        Convert images into a PDF.
+        Convert one or more images into a PDF.
 
         Args:
             input_files:
@@ -164,13 +178,13 @@ class ImageToPDF:
                 FIT, FILL or ORIGINAL.
 
             margin:
-                Page margin in points.
+                Page margin in PDF points.
 
             overwrite:
-                Whether an existing PDF can be replaced.
+                Whether an existing PDF may be replaced.
 
             background:
-                Background used for transparent images.
+                Background color used for transparent images.
 
         Returns:
             ImagePDFResult
@@ -178,24 +192,29 @@ class ImageToPDF:
 
         files = self._normalize_input_files(input_files)
 
-        self._validate_parameters(
-            page_size=page_size,
-            layout=layout,
-            margin=margin,
+        normalized_page_size = self._normalize_page_size(
+            page_size
         )
 
-        normalized_page_size = page_size.strip().upper()
-        normalized_layout = layout.strip().upper()
+        normalized_layout = self._normalize_layout(
+            layout
+        )
 
-        validated_files = []
+        self._validate_parameters(
+            page_size=normalized_page_size,
+            layout=normalized_layout,
+            margin=margin,
+            overwrite=overwrite,
+            background=background,
+        )
+
+        validated_files: List[Path] = []
+        final_output: Optional[Path] = None
 
         try:
             for file_path in files:
                 self._validate_image(file_path)
-
-                # Verify image integrity before PDF generation.
                 self._verify_image(file_path)
-
                 validated_files.append(file_path)
 
             final_output = self._prepare_output_path(
@@ -204,12 +223,17 @@ class ImageToPDF:
                 overwrite=overwrite,
             )
 
+            self._ensure_output_not_input(
+                final_output,
+                validated_files,
+            )
+
             self._create_pdf(
                 input_files=validated_files,
                 output_path=final_output,
                 page_size=normalized_page_size,
                 layout=normalized_layout,
-                margin=margin,
+                margin=float(margin),
                 background=background,
             )
 
@@ -220,22 +244,36 @@ class ImageToPDF:
                 expected_pages=page_count,
             )
 
+            try:
+                output_size = final_output.stat().st_size
+            except OSError as exc:
+                self._cleanup_output(final_output)
+                raise PDFGenerationError(
+                    "Unable to read generated PDF."
+                ) from exc
+
             return ImagePDFResult(
                 success=True,
                 output_path=str(final_output),
                 input_files=[
-                    str(path) for path in validated_files
+                    str(path)
+                    for path in validated_files
                 ],
                 page_count=page_count,
-                output_size=final_output.stat().st_size,
+                output_size=output_size,
                 page_size=normalized_page_size,
                 layout=normalized_layout,
             )
 
         except ImageToPDFError:
+            if final_output is not None:
+                self._cleanup_output(final_output)
             raise
 
         except Exception as exc:
+            if final_output is not None:
+                self._cleanup_output(final_output)
+
             raise PDFGenerationError(
                 f"Failed to create PDF: {exc}"
             ) from exc
@@ -288,7 +326,7 @@ class ImageToPDF:
         self,
         input_file: str | Path,
     ) -> dict:
-        """Return image information."""
+        """Return image information without modifying the image."""
 
         path = Path(input_file)
 
@@ -296,12 +334,22 @@ class ImageToPDF:
 
         try:
             with Image.open(path) as image:
+                if not image.format:
+                    raise InvalidImageError(
+                        f"Unable to determine image format: "
+                        f"{path.name}"
+                    )
 
-                actual_format = (
-                    image.format.upper()
-                    if image.format
-                    else None
+                actual_format = self._normalize_format(
+                    image.format
                 )
+
+                try:
+                    file_size = path.stat().st_size
+                except OSError as exc:
+                    raise InvalidImageError(
+                        f"Unable to read image size: {path.name}"
+                    ) from exc
 
                 return {
                     "path": str(path),
@@ -311,11 +359,14 @@ class ImageToPDF:
                     "height": image.height,
                     "dimensions": image.size,
                     "mode": image.mode,
-                    "file_size": path.stat().st_size,
-                    "has_transparency": (
-                        self._has_transparency(image)
+                    "file_size": file_size,
+                    "has_transparency": self._has_transparency(
+                        image
                     ),
                 }
+
+        except ImageToPDFError:
+            raise
 
         except Exception as exc:
             raise InvalidImageError(
@@ -355,7 +406,10 @@ class ImageToPDF:
         return files
 
     @classmethod
-    def _validate_image(cls, path: Path) -> None:
+    def _validate_image(
+        cls,
+        path: Path,
+    ) -> None:
         """Validate basic image file requirements."""
 
         if not path.exists():
@@ -368,7 +422,14 @@ class ImageToPDF:
                 f"Input path is not a file: {path}"
             )
 
-        if path.stat().st_size == 0:
+        try:
+            file_size = path.stat().st_size
+        except OSError as exc:
+            raise InvalidImageError(
+                f"Unable to access image: {path}"
+            ) from exc
+
+        if file_size == 0:
             raise InvalidImageError(
                 f"Image is empty: {path.name}"
             )
@@ -388,13 +449,37 @@ class ImageToPDF:
                 f"Unsupported image format: {path.suffix}"
             )
 
-    @staticmethod
-    def _verify_image(path: Path) -> None:
+    @classmethod
+    def _verify_image(
+        cls,
+        path: Path,
+    ) -> None:
         """Verify that Pillow can read the image."""
 
         try:
             with Image.open(path) as image:
+                detected_format = image.format
+
+                if not detected_format:
+                    raise InvalidImageError(
+                        f"Unable to determine image format: "
+                        f"{path.name}"
+                    )
+
+                normalized_format = cls._normalize_format(
+                    detected_format
+                )
+
+                if normalized_format not in cls.SUPPORTED_FORMATS:
+                    raise UnsupportedImageFormatError(
+                        f"Unsupported image format: "
+                        f"{detected_format}"
+                    )
+
                 image.verify()
+
+        except ImageToPDFError:
+            raise
 
         except Exception as exc:
             raise InvalidImageError(
@@ -406,40 +491,154 @@ class ImageToPDF:
     # Parameter Validation
     # ==================================================================
 
+    @staticmethod
+    def _normalize_page_size(
+        page_size: str,
+    ) -> str:
+        """Normalize page size."""
+
+        if not isinstance(page_size, str):
+            raise InvalidPDFParameterError(
+                "page_size must be a string."
+            )
+
+        value = page_size.strip().upper()
+
+        if value not in {
+            "A4",
+            "LETTER",
+            "ORIGINAL",
+        }:
+            raise InvalidPDFParameterError(
+                f"Unsupported page size: {page_size}. "
+                "Use A4, LETTER or ORIGINAL."
+            )
+
+        return value
+
+    @staticmethod
+    def _normalize_layout(
+        layout: str,
+    ) -> str:
+        """Normalize layout mode."""
+
+        if not isinstance(layout, str):
+            raise InvalidPDFParameterError(
+                "layout must be a string."
+            )
+
+        value = layout.strip().upper()
+
+        if value not in {
+            "FIT",
+            "FILL",
+            "ORIGINAL",
+        }:
+            raise InvalidPDFParameterError(
+                f"Unsupported layout: {layout}. "
+                "Use FIT, FILL or ORIGINAL."
+            )
+
+        return value
+
     def _validate_parameters(
         self,
         page_size: str,
         layout: str,
         margin: float,
+        overwrite: bool,
+        background: str,
     ) -> None:
         """Validate PDF configuration."""
 
-        normalized_page_size = page_size.strip().upper()
-        normalized_layout = layout.strip().upper()
-
-        if normalized_page_size not in (
-            set(self.PAGE_SIZES.keys()) | {"ORIGINAL"}
+        if page_size not in (
+            set(self.PAGE_SIZES.keys())
+            | {"ORIGINAL"}
         ):
             raise InvalidPDFParameterError(
-                f"Unsupported page size: {page_size}. "
-                f"Use A4, LETTER or ORIGINAL."
+                f"Unsupported page size: {page_size}."
             )
 
-        if normalized_layout not in self.LAYOUTS:
+        if layout not in self.LAYOUTS:
             raise InvalidPDFParameterError(
-                f"Unsupported layout: {layout}. "
-                f"Use FIT, FILL or ORIGINAL."
+                f"Unsupported layout: {layout}."
             )
 
-        if not isinstance(margin, (int, float)):
+        if isinstance(margin, bool) or not isinstance(
+            margin,
+            (int, float),
+        ):
             raise InvalidPDFParameterError(
                 "margin must be a number."
+            )
+
+        if not math.isfinite(float(margin)):
+            raise InvalidPDFParameterError(
+                "margin must be a finite number."
             )
 
         if margin < 0:
             raise InvalidPDFParameterError(
                 "margin cannot be negative."
             )
+
+        if not isinstance(overwrite, bool):
+            raise InvalidPDFParameterError(
+                "overwrite must be a boolean."
+            )
+
+        if not isinstance(background, str):
+            raise InvalidPDFParameterError(
+                "background must be a color string."
+            )
+
+        background = background.strip()
+
+        if not background:
+            raise InvalidPDFParameterError(
+                "background cannot be empty."
+            )
+
+        try:
+            Image.new(
+                "RGB",
+                (1, 1),
+                background,
+            )
+        except Exception as exc:
+            raise InvalidPDFParameterError(
+                f"Invalid background color: {background}"
+            ) from exc
+
+    # ==================================================================
+    # Format Handling
+    # ==================================================================
+
+    @classmethod
+    def _normalize_format(
+        cls,
+        image_format: str,
+    ) -> str:
+        """Normalize an image format name."""
+
+        if image_format is None:
+            raise UnsupportedImageFormatError(
+                "Image format cannot be empty."
+            )
+
+        value = str(image_format).strip().upper()
+
+        if value.startswith("."):
+            value = value[1:]
+
+        normalized = cls.FORMAT_ALIASES.get(value)
+
+        if normalized is None:
+            raise UnsupportedImageFormatError(
+                f"Unsupported image format: {image_format}"
+            )
+
+        return normalized
 
     # ==================================================================
     # PDF Creation
@@ -460,7 +659,6 @@ class ImageToPDF:
 
         try:
             if page_size == "ORIGINAL":
-                # The first page determines the initial canvas.
                 first_width, first_height = (
                     self._get_original_page_size(
                         input_files[0]
@@ -469,7 +667,10 @@ class ImageToPDF:
 
                 pdf = canvas.Canvas(
                     str(output_path),
-                    pagesize=(first_width, first_height),
+                    pagesize=(
+                        first_width,
+                        first_height,
+                    ),
                 )
 
             else:
@@ -477,7 +678,10 @@ class ImageToPDF:
 
                 pdf = canvas.Canvas(
                     str(output_path),
-                    pagesize=(width, height),
+                    pagesize=(
+                        width,
+                        height,
+                    ),
                 )
 
             for image_path in input_files:
@@ -490,7 +694,10 @@ class ImageToPDF:
                     )
 
                     pdf.setPageSize(
-                        (page_width, page_height)
+                        (
+                            page_width,
+                            page_height,
+                        )
                     )
 
                 else:
@@ -499,27 +706,29 @@ class ImageToPDF:
                     )
 
                 with Image.open(image_path) as source:
-
-                    image = ImageOps.exif_transpose(source)
+                    image = ImageOps.exif_transpose(
+                        source
+                    )
 
                     image = self._prepare_image(
                         image,
                         background=background,
                     )
 
-                    image_width, image_height = (
-                        image.size
-                    )
+                    image_width, image_height = image.size
 
-                    draw_x, draw_y, draw_width, draw_height = (
-                        self._calculate_image_position(
-                            image_width=image_width,
-                            image_height=image_height,
-                            page_width=page_width,
-                            page_height=page_height,
-                            margin=margin,
-                            layout=layout,
-                        )
+                    (
+                        draw_x,
+                        draw_y,
+                        draw_width,
+                        draw_height,
+                    ) = self._calculate_image_position(
+                        image_width=image_width,
+                        image_height=image_height,
+                        page_width=page_width,
+                        page_height=page_height,
+                        margin=margin,
+                        layout=layout,
                     )
 
                     pdf.drawImage(
@@ -535,18 +744,19 @@ class ImageToPDF:
                 pdf.showPage()
 
             pdf.save()
+            pdf = None
+
+        except ImageToPDFError:
+            raise
 
         except Exception as exc:
-
-            if pdf is not None:
-                try:
-                    pdf.save()
-                except Exception:
-                    pass
-
             raise PDFGenerationError(
                 f"Unable to generate PDF: {exc}"
             ) from exc
+
+        finally:
+            if pdf is not None:
+                del pdf
 
     # ==================================================================
     # Image Preparation
@@ -580,7 +790,6 @@ class ImageToPDF:
         """
 
         if cls._has_transparency(image):
-
             rgba = image.convert("RGBA")
 
             canvas_image = Image.new(
@@ -622,18 +831,27 @@ class ImageToPDF:
         available_width = page_width - (2 * margin)
         available_height = page_height - (2 * margin)
 
-        if available_width <= 0 or available_height <= 0:
+        if (
+            available_width <= 0
+            or available_height <= 0
+        ):
             raise InvalidPDFParameterError(
                 "Margins are too large for the selected page size."
             )
 
-        if image_width <= 0 or image_height <= 0:
+        if (
+            image_width <= 0
+            or image_height <= 0
+        ):
             raise InvalidImageError(
                 "Image has invalid dimensions."
             )
 
-        image_ratio = image_width / image_height
-        page_ratio = (
+        image_ratio = (
+            image_width / image_height
+        )
+
+        available_ratio = (
             available_width / available_height
         )
 
@@ -642,11 +860,9 @@ class ImageToPDF:
         # --------------------------------------------------------------
 
         if layout == "ORIGINAL":
+            draw_width = float(image_width)
+            draw_height = float(image_height)
 
-            draw_width = image_width
-            draw_height = image_height
-
-            # If original image is too large, scale it down.
             if (
                 draw_width > available_width
                 or draw_height > available_height
@@ -664,31 +880,24 @@ class ImageToPDF:
         # --------------------------------------------------------------
 
         elif layout == "FILL":
+            # Cover the complete available area while
+            # preserving the image aspect ratio.
 
-            # Fill the available page area while maintaining
-            # aspect ratio. Parts may extend outside the
-            # available region.
-            if image_ratio > page_ratio:
+            scale = max(
+                available_width / image_width,
+                available_height / image_height,
+            )
 
-                draw_height = available_height
-                draw_width = (
-                    draw_height * image_ratio
-                )
-
-            else:
-
-                draw_width = available_width
-                draw_height = (
-                    draw_width / image_ratio
-                )
+            draw_width = image_width * scale
+            draw_height = image_height * scale
 
         # --------------------------------------------------------------
         # FIT
         # --------------------------------------------------------------
 
         else:
+            # Keep the complete image visible.
 
-            # FIT is the default and keeps the complete image visible.
             scale = min(
                 available_width / image_width,
                 available_height / image_height,
@@ -698,6 +907,7 @@ class ImageToPDF:
             draw_height = image_height * scale
 
         # Center image on page.
+
         draw_x = (
             page_width - draw_width
         ) / 2
@@ -724,22 +934,29 @@ class ImageToPDF:
         """
         Calculate PDF page dimensions from image dimensions.
 
-        Uses 72 DPI as the PDF point conversion.
+        Uses 72 DPI as the PDF point conversion, meaning
+        one image pixel is treated as one PDF point.
         """
 
         try:
             with Image.open(image_path) as image:
-
                 image = ImageOps.exif_transpose(image)
 
                 width, height = image.size
 
-                if width <= 0 or height <= 0:
+                if (
+                    width <= 0
+                    or height <= 0
+                ):
                     raise InvalidImageError(
-                        f"Invalid dimensions: {image_path.name}"
+                        f"Invalid dimensions: "
+                        f"{image_path.name}"
                     )
 
-                return float(width), float(height)
+                return (
+                    float(width),
+                    float(height),
+                )
 
         except ImageToPDFError:
             raise
@@ -762,14 +979,23 @@ class ImageToPDF:
         """Prepare a safe PDF output path."""
 
         if output_path is not None:
-
             output = Path(output_path)
+
+            try:
+                output.parent.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+            except OSError as exc:
+                raise PDFGenerationError(
+                    f"Unable to create output directory: "
+                    f"{output.parent}"
+                ) from exc
 
             if output.suffix.lower() != ".pdf":
                 output = output.with_suffix(".pdf")
 
         else:
-
             first_file = input_files[0]
 
             output = (
@@ -777,17 +1003,42 @@ class ImageToPDF:
                 / f"{first_file.stem}.pdf"
             )
 
-        output.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
         if output.exists() and not overwrite:
             output = ImageToPDF._find_available_path(
                 output
             )
 
         return output
+
+    @staticmethod
+    def _ensure_output_not_input(
+        output_path: Path,
+        input_files: List[Path],
+    ) -> None:
+        """Ensure output cannot overwrite an input image."""
+
+        try:
+            output_resolved = output_path.resolve()
+        except OSError as exc:
+            raise PDFGenerationError(
+                f"Unable to resolve output path: "
+                f"{output_path}"
+            ) from exc
+
+        for input_file in input_files:
+            try:
+                input_resolved = input_file.resolve()
+            except OSError as exc:
+                raise PDFGenerationError(
+                    f"Unable to resolve file path: "
+                    f"{input_file}"
+                ) from exc
+
+            if output_resolved == input_resolved:
+                raise InvalidPDFParameterError(
+                    "Output path must be different from "
+                    "all input image paths."
+                )
 
     @staticmethod
     def _find_available_path(
@@ -798,7 +1049,6 @@ class ImageToPDF:
         counter = 1
 
         while True:
-
             candidate = (
                 path.parent
                 / f"{path.stem}_{counter}{path.suffix}"
@@ -825,28 +1075,28 @@ class ImageToPDF:
                 "PDF file was not created."
             )
 
-        if pdf_path.stat().st_size == 0:
+        if not pdf_path.is_file():
+            raise PDFGenerationError(
+                "Generated PDF path is not a file."
+            )
+
+        try:
+            file_size = pdf_path.stat().st_size
+        except OSError as exc:
+            raise PDFGenerationError(
+                "Unable to read generated PDF."
+            ) from exc
+
+        if file_size == 0:
             raise PDFGenerationError(
                 "Generated PDF is empty."
             )
 
         try:
-            from pypdf import PdfReader
-
-            reader = PdfReader(str(pdf_path))
-
-            actual_pages = len(reader.pages)
-
-            if actual_pages != expected_pages:
-                raise PDFGenerationError(
-                    f"PDF page count mismatch. "
-                    f"Expected {expected_pages}, "
-                    f"got {actual_pages}."
-                )
-
-        except ImportError:
-            # Basic validation when pypdf is unavailable.
-            with open(pdf_path, "rb") as file:
+            with open(
+                pdf_path,
+                "rb",
+            ) as file:
                 header = file.read(5)
 
             if header != b"%PDF-":
@@ -857,15 +1107,68 @@ class ImageToPDF:
         except PDFGenerationError:
             raise
 
+        except OSError as exc:
+            raise PDFGenerationError(
+                f"Unable to read generated PDF: {exc}"
+            ) from exc
+
+        # Optional stronger validation when pypdf is installed.
+
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return
+
+        try:
+            reader = PdfReader(
+                str(pdf_path)
+            )
+
+            if reader.is_encrypted:
+                raise PDFGenerationError(
+                    "Generated PDF is unexpectedly encrypted."
+                )
+
+            actual_pages = len(reader.pages)
+
+            if actual_pages != expected_pages:
+                raise PDFGenerationError(
+                    "PDF page count mismatch. "
+                    f"Expected {expected_pages}, "
+                    f"got {actual_pages}."
+                )
+
+        except PDFGenerationError:
+            raise
+
         except Exception as exc:
             raise PDFGenerationError(
                 f"Generated PDF failed validation: {exc}"
             ) from exc
 
+    # ==================================================================
+    # Cleanup
+    # ==================================================================
+
+    @staticmethod
+    def _cleanup_output(
+        output_path: Path,
+    ) -> None:
+        """Remove a partially generated PDF."""
+
+        try:
+            if output_path.exists():
+                output_path.unlink()
+
+        except OSError:
+            # Cleanup failure must not hide the original error.
+            pass
+
 
 # ======================================================================
 # Convenience Function
 # ======================================================================
+
 
 _default_converter = ImageToPDF()
 

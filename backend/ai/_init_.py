@@ -1,0 +1,3 @@
+"""
+OFFSEDU AI package.
+"""

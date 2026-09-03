@@ -2,6 +2,7 @@
 StudyGemma - Image Compressor
 
 Provides safe and configurable image compression with:
+
 - JPEG, PNG, WEBP, BMP and TIFF support
 - Quality control
 - Optional resizing
@@ -40,18 +41,14 @@ class CompressionResult:
     success: bool
     input_path: str
     output_path: Optional[str] = None
-
     original_size: int = 0
     compressed_size: int = 0
     space_saved: int = 0
     compression_percentage: float = 0.0
-
     original_dimensions: tuple[int, int] = (0, 0)
     output_dimensions: tuple[int, int] = (0, 0)
-
     original_format: Optional[str] = None
     output_format: Optional[str] = None
-
     quality: Optional[int] = None
     error: Optional[str] = None
 
@@ -163,14 +160,17 @@ class ImageCompressor:
         self._validate_input_path(input_file)
         self._validate_quality(quality)
         self._validate_dimensions(max_width, max_height)
+        self._validate_overwrite(overwrite)
+
+        created_output: Optional[Path] = None
 
         try:
-            with Image.open(input_file) as image:
+            with Image.open(input_file) as source_image:
                 original_format = self._normalize_format(
-                    image.format or input_file.suffix
+                    source_image.format or input_file.suffix
                 )
 
-                original_dimensions = image.size
+                original_dimensions = source_image.size
                 original_size = input_file.stat().st_size
 
                 target_format = self._determine_output_format(
@@ -185,8 +185,13 @@ class ImageCompressor:
                     overwrite=overwrite,
                 )
 
+                if final_output.resolve() == input_file.resolve():
+                    raise InvalidCompressionParameterError(
+                        "Output path must be different from the input path."
+                    )
+
                 # Correct orientation according to EXIF metadata.
-                image = ImageOps.exif_transpose(image)
+                image = ImageOps.exif_transpose(source_image)
 
                 # Resize only when necessary.
                 image = self._resize_image(
@@ -211,6 +216,8 @@ class ImageCompressor:
                     format=target_format,
                     **save_options,
                 )
+
+                created_output = final_output
 
                 # Validate generated output.
                 self._validate_output(final_output)
@@ -247,9 +254,14 @@ class ImageCompressor:
                 )
 
         except ImageCompressionError:
+            if created_output is not None:
+                self._cleanup_output(created_output)
             raise
 
         except Exception as exc:
+            if created_output is not None:
+                self._cleanup_output(created_output)
+
             raise ImageCompressionError(
                 f"Failed to compress image: {exc}"
             ) from exc
@@ -267,12 +279,42 @@ class ImageCompressor:
         """
         Attempt to compress an image below a target size in bytes.
 
-        The method gradually reduces quality.
+        The method gradually reduces quality. If the requested target
+        cannot be reached, the smallest successful result is returned.
 
         Args:
+            input_path:
+                Path to the source image.
+
+            output_path:
+                Optional output path.
+
             target_size:
                 Desired maximum size in bytes.
+
+            max_width:
+                Optional maximum output width.
+
+            max_height:
+                Optional maximum output height.
+
+            output_format:
+                Optional output format.
+
+            overwrite:
+                Whether an existing output file may be replaced.
+
+        Returns:
+            CompressionResult
         """
+
+        if isinstance(target_size, bool) or not isinstance(
+            target_size,
+            int,
+        ):
+            raise InvalidCompressionParameterError(
+                "target_size must be an integer."
+            )
 
         if target_size <= 0:
             raise InvalidCompressionParameterError(
@@ -281,9 +323,12 @@ class ImageCompressor:
 
         input_file = Path(input_path)
         self._validate_input_path(input_file)
+        self._validate_dimensions(max_width, max_height)
+        self._validate_overwrite(overwrite)
 
         last_result: Optional[CompressionResult] = None
 
+        # Quality values from high to low.
         for quality in range(90, 9, -10):
             result = self.compress(
                 input_path=input_file,
@@ -292,7 +337,7 @@ class ImageCompressor:
                 max_width=max_width,
                 max_height=max_height,
                 output_format=output_format,
-                overwrite=True if last_result else overwrite,
+                overwrite=True,
             )
 
             last_result = result
@@ -320,6 +365,8 @@ class ImageCompressor:
 
         try:
             with Image.open(path) as image:
+                file_size = path.stat().st_size
+
                 return {
                     "path": str(path),
                     "filename": path.name,
@@ -330,15 +377,18 @@ class ImageCompressor:
                     "height": image.height,
                     "dimensions": image.size,
                     "mode": image.mode,
-                    "size": path.stat().st_size,
+                    "size": file_size,
                     "size_mb": round(
-                        path.stat().st_size / (1024 * 1024),
+                        file_size / (1024 * 1024),
                         2,
                     ),
-                    "has_transparency": (
-                        self._has_transparency(image)
+                    "has_transparency": self._has_transparency(
+                        image
                     ),
                 }
+
+        except ImageCompressionError:
+            raise
 
         except Exception as exc:
             raise InvalidImageError(
@@ -363,11 +413,19 @@ class ImageCompressor:
                 f"Input path is not a file: {path}"
             )
 
+        if not path.suffix:
+            raise InvalidImageError(
+                "Input image must have a file extension."
+            )
+
     @classmethod
     def _validate_quality(cls, quality: int) -> None:
         """Validate compression quality."""
 
-        if not isinstance(quality, int):
+        if isinstance(quality, bool) or not isinstance(
+            quality,
+            int,
+        ):
             raise InvalidCompressionParameterError(
                 "quality must be an integer."
             )
@@ -389,14 +447,41 @@ class ImageCompressor:
     ) -> None:
         """Validate optional dimensions."""
 
-        if max_width is not None and max_width <= 0:
-            raise InvalidCompressionParameterError(
-                "max_width must be greater than zero."
-            )
+        if max_width is not None:
+            if isinstance(max_width, bool) or not isinstance(
+                max_width,
+                int,
+            ):
+                raise InvalidCompressionParameterError(
+                    "max_width must be an integer."
+                )
 
-        if max_height is not None and max_height <= 0:
+            if max_width <= 0:
+                raise InvalidCompressionParameterError(
+                    "max_width must be greater than zero."
+                )
+
+        if max_height is not None:
+            if isinstance(max_height, bool) or not isinstance(
+                max_height,
+                int,
+            ):
+                raise InvalidCompressionParameterError(
+                    "max_height must be an integer."
+                )
+
+            if max_height <= 0:
+                raise InvalidCompressionParameterError(
+                    "max_height must be greater than zero."
+                )
+
+    @staticmethod
+    def _validate_overwrite(overwrite: bool) -> None:
+        """Validate overwrite parameter."""
+
+        if not isinstance(overwrite, bool):
             raise InvalidCompressionParameterError(
-                "max_height must be greater than zero."
+                "overwrite must be a boolean."
             )
 
     # ------------------------------------------------------------------
@@ -404,25 +489,33 @@ class ImageCompressor:
     # ------------------------------------------------------------------
 
     @classmethod
-    def _normalize_format(cls, image_format: str) -> str:
+    def _normalize_format(
+        cls,
+        image_format: str,
+    ) -> str:
         """Normalize image format."""
 
-        image_format = str(image_format).strip().upper()
-
-        if image_format.startswith("."):
-            image_format = image_format[1:]
-
-        image_format = cls.FORMAT_ALIASES.get(
-            image_format,
-            image_format,
-        )
-
-        if image_format not in cls.SUPPORTED_FORMATS:
+        if image_format is None:
             raise InvalidImageError(
-                f"Unsupported image format: {image_format}"
+                "Image format could not be determined."
             )
 
-        return image_format
+        normalized = str(image_format).strip().upper()
+
+        if normalized.startswith("."):
+            normalized = normalized[1:]
+
+        normalized = cls.FORMAT_ALIASES.get(
+            normalized,
+            normalized,
+        )
+
+        if normalized not in cls.SUPPORTED_FORMATS:
+            raise InvalidImageError(
+                f"Unsupported image format: {normalized}"
+            )
+
+        return normalized
 
     @classmethod
     def _determine_output_format(
@@ -476,7 +569,9 @@ class ImageCompressor:
         return resized
 
     @staticmethod
-    def _has_transparency(image: Image.Image) -> bool:
+    def _has_transparency(
+        image: Image.Image,
+    ) -> bool:
         """Check whether an image contains transparency."""
 
         if image.mode in ("RGBA", "LA"):
@@ -543,7 +638,11 @@ class ImageCompressor:
                 return image.convert("RGB")
 
         elif output_format in ("BMP", "TIFF"):
-            if image.mode not in ("RGB", "RGBA", "L"):
+            if image.mode not in (
+                "RGB",
+                "RGBA",
+                "L",
+            ):
                 return image.convert("RGB")
 
         return image
@@ -601,10 +700,17 @@ class ImageCompressor:
         if output_path is not None:
             output = Path(output_path)
 
-            output.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
+            try:
+                output.parent.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+            except OSError as exc:
+                raise ImageCompressionError(
+                    f"Unable to create output directory: "
+                    f"{output.parent}"
+                ) from exc
+
         else:
             suffix = {
                 "JPEG": ".jpg",
@@ -623,7 +729,9 @@ class ImageCompressor:
             )
 
         if output.exists() and not overwrite:
-            output = ImageCompressor._find_available_path(output)
+            output = ImageCompressor._find_available_path(
+                output
+            )
 
         return output
 
@@ -645,12 +753,19 @@ class ImageCompressor:
             counter += 1
 
     @staticmethod
-    def _validate_output(output_path: Path) -> None:
+    def _validate_output(
+        output_path: Path,
+    ) -> None:
         """Validate the generated image."""
 
         if not output_path.exists():
             raise ImageCompressionError(
                 "Compressed image was not created."
+            )
+
+        if not output_path.is_file():
+            raise ImageCompressionError(
+                "Compressed output is not a file."
             )
 
         if output_path.stat().st_size == 0:
@@ -661,10 +776,24 @@ class ImageCompressor:
         try:
             with Image.open(output_path) as image:
                 image.verify()
+
         except Exception as exc:
             raise ImageCompressionError(
                 f"Generated image failed validation: {exc}"
             ) from exc
+
+    @staticmethod
+    def _cleanup_output(
+        output_path: Path,
+    ) -> None:
+        """Remove a partially generated output file."""
+
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except OSError:
+            # Cleanup failure should not hide the original error.
+            pass
 
 
 # ----------------------------------------------------------------------

@@ -1,24 +1,24 @@
 """
-StudyGemma - Text to Speech
-backend/voice/text_to_speech.py
+StudyGemma - Speech to Text
+backend/voice/speech_to_text.py
 
-Converts text into speech with:
+Converts audio into text with:
 - Multi-language support
-- Configurable speed and volume
-- Long-text handling
+- Local/offline engine support
+- Audio validation
+- Format detection
+- Long-audio handling
 - Text cleaning
-- Safe audio output
-- Output validation
+- Confidence metadata when available
 - Structured results
 - Engine abstraction
-
-The implementation prefers a local/offline TTS engine.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,20 +32,24 @@ class VoiceError(Exception):
     """Base exception for voice-related errors."""
 
 
-class TTSGenerationError(VoiceError):
-    """Raised when speech generation fails."""
+class STTRecognitionError(VoiceError):
+    """Raised when speech recognition fails."""
 
 
 class UnsupportedLanguageError(VoiceError):
-    """Raised when the requested language is not supported."""
+    """Raised when the requested language is unsupported."""
 
 
-class InvalidTextError(VoiceError):
-    """Raised when the input text is invalid."""
+class UnsupportedAudioFormatError(VoiceError):
+    """Raised when the audio format is unsupported."""
 
 
-class AudioOutputError(VoiceError):
-    """Raised when generated audio is invalid or cannot be saved."""
+class InvalidAudioError(VoiceError):
+    """Raised when the audio file is invalid."""
+
+
+class AudioProcessingError(VoiceError):
+    """Raised when audio preprocessing fails."""
 
 
 # ============================================================
@@ -53,15 +57,14 @@ class AudioOutputError(VoiceError):
 # ============================================================
 
 @dataclass
-class TTSResult:
-    """Structured result returned after text-to-speech generation."""
+class STTResult:
+    """Structured result returned by speech-to-text."""
 
     success: bool
+    text: str = ""
     audio_path: Optional[str] = None
     language: Optional[str] = None
-    voice: Optional[str] = None
-    output_format: Optional[str] = None
-    text_length: int = 0
+    confidence: Optional[float] = None
     duration: Optional[float] = None
     chunks: int = 0
     error: Optional[str] = None
@@ -70,11 +73,10 @@ class TTSResult:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "success": self.success,
+            "text": self.text,
             "audio_path": self.audio_path,
             "language": self.language,
-            "voice": self.voice,
-            "output_format": self.output_format,
-            "text_length": self.text_length,
+            "confidence": self.confidence,
             "duration": self.duration,
             "chunks": self.chunks,
             "error": self.error,
@@ -87,47 +89,55 @@ class TTSResult:
 # ============================================================
 
 @dataclass
-class TTSConfig:
-    """Configuration used by the TTS engine."""
+class STTConfig:
+    """Speech-to-text configuration."""
 
     language: str = "en"
-    voice: Optional[str] = None
-    speed: float = 1.0
-    volume: float = 1.0
-    output_format: str = "wav"
 
-    # Maximum characters sent to the engine at once.
-    max_chunk_length: int = 2500
+    # Maximum supported audio duration before chunking.
+    chunk_duration: int = 60
 
-    # Prevent accidentally huge requests.
-    max_text_length: int = 100_000
+    # Maximum accepted audio duration.
+    max_duration: int = 3600
+
+    # Supported audio extensions.
+    supported_formats: tuple = (
+        ".wav",
+        ".mp3",
+        ".ogg",
+        ".flac",
+        ".m4a",
+        ".webm",
+    )
 
     def validate(self) -> None:
-        if self.speed <= 0:
-            raise ValueError("Speed must be greater than 0.")
+        if self.chunk_duration <= 0:
+            raise ValueError(
+                "chunk_duration must be greater than 0."
+            )
 
-        if self.volume < 0 or self.volume > 1:
-            raise ValueError("Volume must be between 0 and 1.")
+        if self.max_duration <= 0:
+            raise ValueError(
+                "max_duration must be greater than 0."
+            )
 
-        if self.max_chunk_length <= 0:
-            raise ValueError("max_chunk_length must be greater than 0.")
-
-        if self.max_text_length <= 0:
-            raise ValueError("max_text_length must be greater than 0.")
-
-        self.output_format = self.output_format.lower().lstrip(".")
+        if self.chunk_duration > self.max_duration:
+            raise ValueError(
+                "chunk_duration cannot exceed max_duration."
+            )
 
 
 # ============================================================
-# Text To Speech
+# Speech To Text
 # ============================================================
 
-class TextToSpeech:
+class SpeechToText:
     """
-    Main Text-to-Speech service.
+    Main Speech-to-Text service.
 
-    The service keeps the application independent from the
-    underlying TTS engine.
+    The actual recognition engine is isolated behind an adapter,
+    allowing the engine to be replaced without changing
+    StudyGemma's application code.
     """
 
     SUPPORTED_LANGUAGES = {
@@ -149,155 +159,150 @@ class TextToSpeech:
         "ur-in": "ur",
     }
 
-    SUPPORTED_FORMATS = {
-        "wav",
-        "mp3",
-        "ogg",
-    }
-
     def __init__(
         self,
-        output_dir: Optional[str | Path] = None,
         engine: Any = None,
-        config: Optional[TTSConfig] = None,
+        config: Optional[STTConfig] = None,
     ):
-        self.config = config or TTSConfig()
+        self.config = config or STTConfig()
         self.config.validate()
-
-        self.output_dir = Path(
-            output_dir or "backend/storage/generated"
-        ).resolve()
-
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.engine = engine or self._create_default_engine()
 
-    # --------------------------------------------------------
+    # ========================================================
     # Public API
-    # --------------------------------------------------------
+    # ========================================================
 
-    def synthesize(
+    def transcribe(
         self,
-        text: str,
+        audio_path: str | Path,
         language: Optional[str] = None,
-        voice: Optional[str] = None,
-        speed: Optional[float] = None,
-        volume: Optional[float] = None,
-        output_format: Optional[str] = None,
-        output_path: Optional[str | Path] = None,
-        overwrite: bool = False,
-    ) -> TTSResult:
+    ) -> STTResult:
         """
-        Convert text to speech.
+        Convert an audio file into text.
+        """
 
-        Returns a TTSResult instead of exposing engine-specific
-        implementation details.
-        """
+        path = Path(audio_path).expanduser().resolve()
 
         try:
-            cleaned_text = self._prepare_text(text)
+            self._validate_audio_file(path)
 
             selected_language = self.normalize_language(
                 language or self.config.language
             )
 
-            selected_voice = voice or self.config.voice
-            selected_speed = (
-                self.config.speed if speed is None else speed
-            )
-            selected_volume = (
-                self.config.volume if volume is None else volume
-            )
+            audio_info = self.get_audio_info(path)
 
-            selected_format = (
-                output_format or self.config.output_format
-            ).lower().lstrip(".")
+            duration = audio_info.get("duration")
 
-            self._validate_parameters(
-                selected_speed,
-                selected_volume,
-                selected_format,
-            )
+            if duration is not None:
+                if duration > self.config.max_duration:
+                    raise InvalidAudioError(
+                        f"Audio duration exceeds the maximum "
+                        f"allowed duration of "
+                        f"{self.config.max_duration} seconds."
+                    )
 
-            chunks = self._split_text(
-                cleaned_text,
-                self.config.max_chunk_length,
+            audio_chunks = self._prepare_chunks(
+                path,
+                duration,
             )
 
-            if not chunks:
-                raise InvalidTextError("No usable text was provided.")
+            recognized_parts: List[str] = []
+            confidences: List[float] = []
 
-            final_path = self._prepare_output_path(
-                output_path=output_path,
-                output_format=selected_format,
-                overwrite=overwrite,
+            for chunk in audio_chunks:
+                result = self._recognize_chunk(
+                    chunk=chunk,
+                    language=selected_language,
+                )
+
+                chunk_text = self._clean_text(
+                    result.get("text", "")
+                )
+
+                if chunk_text:
+                    recognized_parts.append(chunk_text)
+
+                confidence = result.get("confidence")
+
+                if isinstance(confidence, (int, float)):
+                    if 0 <= confidence <= 1:
+                        confidences.append(float(confidence))
+
+            final_text = self._combine_text(
+                recognized_parts
             )
 
-            audio_result = self._generate_audio(
-                chunks=chunks,
-                language=selected_language,
-                voice=selected_voice,
-                speed=selected_speed,
-                volume=selected_volume,
-                output_format=selected_format,
-                output_path=final_path,
+            average_confidence = (
+                sum(confidences) / len(confidences)
+                if confidences
+                else None
             )
 
-            self._validate_audio_output(final_path)
-
-            return TTSResult(
+            return STTResult(
                 success=True,
-                audio_path=str(final_path),
+                text=final_text,
+                audio_path=str(path),
                 language=selected_language,
-                voice=selected_voice,
-                output_format=selected_format,
-                text_length=len(cleaned_text),
-                duration=audio_result.get("duration"),
-                chunks=len(chunks),
+                confidence=average_confidence,
+                duration=duration,
+                chunks=len(audio_chunks),
                 metadata={
                     "language_name": self.SUPPORTED_LANGUAGES[
                         selected_language
                     ],
-                    "speed": selected_speed,
-                    "volume": selected_volume,
+                    "audio_format": audio_info.get("format"),
+                    "sample_rate": audio_info.get("sample_rate"),
+                    "channels": audio_info.get("channels"),
                 },
             )
 
         except VoiceError as exc:
-            return TTSResult(
+            return STTResult(
                 success=False,
+                audio_path=str(path),
                 language=language,
                 error=str(exc),
             )
 
         except Exception as exc:
-            return TTSResult(
+            return STTResult(
                 success=False,
+                audio_path=str(path),
                 language=language,
-                error=f"TTS generation failed: {exc}",
+                error=f"Speech recognition failed: {exc}",
             )
 
-    def text_to_speech(self, text: str, **kwargs) -> TTSResult:
-        """Alias for synthesize()."""
-        return self.synthesize(text, **kwargs)
+    def speech_to_text(
+        self,
+        audio_path: str | Path,
+        **kwargs,
+    ) -> STTResult:
+        """Alias for transcribe()."""
+        return self.transcribe(audio_path, **kwargs)
 
-    def generate(self, text: str, **kwargs) -> TTSResult:
-        """Alias for synthesize()."""
-        return self.synthesize(text, **kwargs)
+    def recognize(
+        self,
+        audio_path: str | Path,
+        **kwargs,
+    ) -> STTResult:
+        """Alias for transcribe()."""
+        return self.transcribe(audio_path, **kwargs)
 
-    # --------------------------------------------------------
+    # ========================================================
     # Language
-    # --------------------------------------------------------
+    # ========================================================
 
     def normalize_language(self, language: str) -> str:
-        """Normalize language names/codes."""
+        """Normalize language name/code."""
 
         if not language:
             raise UnsupportedLanguageError(
                 "Language must be provided."
             )
 
-        normalized = language.strip().lower()
+        normalized = str(language).strip().lower()
 
         normalized = self.LANGUAGE_ALIASES.get(
             normalized,
@@ -305,7 +310,9 @@ class TextToSpeech:
         )
 
         if normalized not in self.SUPPORTED_LANGUAGES:
-            supported = ", ".join(self.SUPPORTED_LANGUAGES.values())
+            supported = ", ".join(
+                self.SUPPORTED_LANGUAGES.values()
+            )
 
             raise UnsupportedLanguageError(
                 f"Unsupported language '{language}'. "
@@ -315,415 +322,444 @@ class TextToSpeech:
         return normalized
 
     def get_supported_languages(self) -> Dict[str, str]:
-        """Return supported language codes and names."""
+        """Return supported languages."""
+
         return dict(self.SUPPORTED_LANGUAGES)
 
-    # --------------------------------------------------------
-    # Text processing
-    # --------------------------------------------------------
+    # ========================================================
+    # Audio Validation
+    # ========================================================
 
-    def _prepare_text(self, text: str) -> str:
-        """Validate and clean text before synthesis."""
-
-        if text is None:
-            raise InvalidTextError("Text cannot be None.")
-
-        if not isinstance(text, str):
-            raise InvalidTextError("Text must be a string.")
-
-        text = text.strip()
-
-        if not text:
-            raise InvalidTextError("Text cannot be empty.")
-
-        if len(text) > self.config.max_text_length:
-            raise InvalidTextError(
-                f"Text exceeds the maximum allowed length "
-                f"of {self.config.max_text_length} characters."
-            )
-
-        # Remove null/control characters while preserving
-        # normal whitespace and newlines.
-        text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", " ", text)
-
-        # Normalize excessive whitespace.
-        text = re.sub(r"[ \t]+", " ", text)
-
-        # Prevent excessive blank lines.
-        text = re.sub(r"\n{3,}", "\n\n", text)
-
-        return text.strip()
-
-    # --------------------------------------------------------
-    # Chunking
-    # --------------------------------------------------------
-
-    def _split_text(
-        self,
-        text: str,
-        max_length: int,
-    ) -> List[str]:
-        """
-        Split long text while trying to preserve sentences and
-        paragraph boundaries.
-        """
-
-        if len(text) <= max_length:
-            return [text]
-
-        paragraphs = re.split(r"\n\s*\n", text)
-
-        chunks: List[str] = []
-        current = ""
-
-        for paragraph in paragraphs:
-            paragraph = paragraph.strip()
-
-            if not paragraph:
-                continue
-
-            if len(paragraph) <= max_length:
-                candidate = (
-                    f"{current}\n\n{paragraph}"
-                    if current
-                    else paragraph
-                )
-
-                if len(candidate) <= max_length:
-                    current = candidate
-                    continue
-
-                if current:
-                    chunks.append(current)
-                    current = ""
-
-                current = paragraph
-                continue
-
-            # Paragraph itself is too large.
-            sentences = re.split(
-                r"(?<=[.!?।])\s+",
-                paragraph,
-            )
-
-            for sentence in sentences:
-                sentence = sentence.strip()
-
-                if not sentence:
-                    continue
-
-                if len(sentence) > max_length:
-                    # Hard split only when one sentence itself
-                    # exceeds the allowed size.
-                    if current:
-                        chunks.append(current)
-                        current = ""
-
-                    for i in range(0, len(sentence), max_length):
-                        chunks.append(
-                            sentence[i:i + max_length].strip()
-                        )
-                    continue
-
-                candidate = (
-                    f"{current} {sentence}"
-                    if current
-                    else sentence
-                )
-
-                if len(candidate) <= max_length:
-                    current = candidate
-                else:
-                    if current:
-                        chunks.append(current)
-                    current = sentence
-
-        if current:
-            chunks.append(current)
-
-        return [chunk for chunk in chunks if chunk.strip()]
-
-    # --------------------------------------------------------
-    # Validation
-    # --------------------------------------------------------
-
-    def _validate_parameters(
-        self,
-        speed: float,
-        volume: float,
-        output_format: str,
-    ) -> None:
-
-        if speed <= 0:
-            raise ValueError("Speed must be greater than 0.")
-
-        if volume < 0 or volume > 1:
-            raise ValueError(
-                "Volume must be between 0 and 1."
-            )
-
-        if output_format not in self.SUPPORTED_FORMATS:
-            raise ValueError(
-                f"Unsupported output format '{output_format}'. "
-                f"Supported formats: "
-                f"{', '.join(sorted(self.SUPPORTED_FORMATS))}."
-            )
-
-    # --------------------------------------------------------
-    # Output handling
-    # --------------------------------------------------------
-
-    def _prepare_output_path(
-        self,
-        output_path: Optional[str | Path],
-        output_format: str,
-        overwrite: bool,
-    ) -> Path:
-
-        if output_path:
-            path = Path(output_path).expanduser().resolve()
-        else:
-            filename = (
-                f"studygemma_tts_"
-                f"{uuid.uuid4().hex}.{output_format}"
-            )
-            path = self.output_dir / filename
-
-        # Ensure parent directory exists.
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        if path.exists() and not overwrite:
-            raise AudioOutputError(
-                f"Output file already exists: {path}"
-            )
-
-        return path
-
-    def _validate_audio_output(self, path: Path) -> None:
-        """Basic validation of generated audio."""
+    def _validate_audio_file(self, path: Path) -> None:
+        """Validate basic audio file properties."""
 
         if not path.exists():
-            raise AudioOutputError(
-                "TTS engine did not create an audio file."
+            raise InvalidAudioError(
+                f"Audio file does not exist: {path}"
             )
 
         if not path.is_file():
-            raise AudioOutputError(
-                "Generated audio path is not a file."
+            raise InvalidAudioError(
+                "The supplied audio path is not a file."
             )
 
         if path.stat().st_size == 0:
-            raise AudioOutputError(
-                "Generated audio file is empty."
+            raise InvalidAudioError(
+                "Audio file is empty."
             )
 
-    # --------------------------------------------------------
-    # Engine
-    # --------------------------------------------------------
+        extension = path.suffix.lower()
 
-    def _create_default_engine(self):
-        """
-        Create the default local TTS engine.
+        if extension not in self.config.supported_formats:
+            raise UnsupportedAudioFormatError(
+                f"Unsupported audio format '{extension}'. "
+                f"Supported formats: "
+                f"{', '.join(self.config.supported_formats)}."
+            )
 
-        pyttsx3 is used when available because it can work
-        locally without sending study content to a remote API.
+    # ========================================================
+    # Audio Information
+    # ========================================================
 
-        The actual engine is isolated behind this class so it
-        can be replaced later.
-        """
-
-        try:
-            import pyttsx3
-
-            return _Pyttsx3Engine(pyttsx3)
-
-        except ImportError:
-            return _UnavailableTTSEngine()
-
-    def _generate_audio(
+    def get_audio_info(
         self,
-        chunks: List[str],
-        language: str,
-        voice: Optional[str],
-        speed: float,
-        volume: float,
-        output_format: str,
-        output_path: Path,
+        audio_path: str | Path,
     ) -> Dict[str, Any]:
         """
-        Generate audio through the configured engine.
+        Return basic audio information.
+
+        WAV files can be inspected without requiring an
+        additional dependency. Other formats are delegated
+        to the configured engine when possible.
         """
 
-        if not self.engine:
-            raise TTSGenerationError(
-                "No TTS engine is configured."
+        path = Path(audio_path).expanduser().resolve()
+
+        self._validate_audio_file(path)
+
+        extension = path.suffix.lower()
+
+        info: Dict[str, Any] = {
+            "path": str(path),
+            "format": extension.lstrip("."),
+            "size": path.stat().st_size,
+            "duration": None,
+            "sample_rate": None,
+            "channels": None,
+            "sample_width": None,
+        }
+
+        if extension == ".wav":
+            try:
+                with wave.open(str(path), "rb") as wav:
+                    frames = wav.getnframes()
+                    rate = wav.getframerate()
+
+                    info["sample_rate"] = rate
+                    info["channels"] = wav.getnchannels()
+                    info["sample_width"] = wav.getsampwidth()
+
+                    if rate > 0:
+                        info["duration"] = (
+                            frames / float(rate)
+                        )
+
+            except Exception as exc:
+                raise InvalidAudioError(
+                    f"Invalid WAV audio: {exc}"
+                ) from exc
+
+        else:
+            engine_info = getattr(
+                self.engine,
+                "get_audio_info",
+                None,
             )
+
+            if callable(engine_info):
+                try:
+                    engine_data = engine_info(path)
+
+                    if isinstance(engine_data, dict):
+                        info.update(engine_data)
+
+                except Exception:
+                    # Metadata is useful but should not prevent
+                    # recognition when the engine can process it.
+                    pass
+
+        return info
+
+    # ========================================================
+    # Audio Chunking
+    # ========================================================
+
+    def _prepare_chunks(
+        self,
+        path: Path,
+        duration: Optional[float],
+    ) -> List[Path]:
+        """
+        Prepare audio chunks.
+
+        For engines that can process the complete file, the
+        original file is returned as one chunk.
+
+        Actual physical audio splitting is delegated to the
+        engine when necessary.
+        """
+
+        if duration is None:
+            return [path]
+
+        if duration <= self.config.chunk_duration:
+            return [path]
+
+        splitter = getattr(
+            self.engine,
+            "split_audio",
+            None,
+        )
+
+        if not callable(splitter):
+            # Let the engine receive the original file if it
+            # supports long audio itself.
+            return [path]
 
         try:
-            result = self.engine.generate(
-                chunks=chunks,
-                language=language,
-                voice=voice,
-                speed=speed,
-                volume=volume,
-                output_format=output_format,
-                output_path=output_path,
+            chunks = splitter(
+                path,
+                chunk_duration=self.config.chunk_duration,
             )
 
-            if result is None:
-                return {}
+            if not chunks:
+                raise AudioProcessingError(
+                    "Audio splitting produced no chunks."
+                )
 
-            if isinstance(result, dict):
-                return result
-
-            return {}
+            return [
+                Path(chunk).resolve()
+                for chunk in chunks
+            ]
 
         except VoiceError:
             raise
 
         except Exception as exc:
-            raise TTSGenerationError(
-                f"Speech generation failed: {exc}"
+            raise AudioProcessingError(
+                f"Failed to split audio: {exc}"
             ) from exc
 
+    # ========================================================
+    # Recognition
+    # ========================================================
 
-# ============================================================
-# Local pyttsx3 Adapter
-# ============================================================
-
-class _Pyttsx3Engine:
-    """
-    Adapter around pyttsx3.
-
-    Keeping this separate means TextToSpeech does not depend
-    directly on pyttsx3's API.
-    """
-
-    def __init__(self, pyttsx3_module):
-        self.pyttsx3 = pyttsx3_module
-
-    def generate(
+    def _recognize_chunk(
         self,
-        chunks: List[str],
+        chunk: Path,
         language: str,
-        voice: Optional[str],
-        speed: float,
-        volume: float,
-        output_format: str,
-        output_path: Path,
     ) -> Dict[str, Any]:
+        """Recognize one audio chunk."""
 
-        if output_format != "wav":
-            raise TTSGenerationError(
-                "The local pyttsx3 adapter currently supports "
-                "WAV output. Use another engine for MP3/OGG."
+        if not self.engine:
+            raise STTRecognitionError(
+                "No speech recognition engine is configured."
             )
 
-        engine = self.pyttsx3.init()
+        recognize_method = getattr(
+            self.engine,
+            "recognize",
+            None,
+        )
+
+        if not callable(recognize_method):
+            raise STTRecognitionError(
+                "Configured STT engine does not provide "
+                "a recognize() method."
+            )
 
         try:
-            # Approximate normal speech rate.
-            base_rate = 150
-            engine.setProperty(
-                "rate",
-                max(50, int(base_rate * speed)),
+            result = recognize_method(
+                audio_path=chunk,
+                language=language,
             )
 
-            engine.setProperty(
-                "volume",
-                volume,
+            if isinstance(result, str):
+                return {"text": result}
+
+            if isinstance(result, dict):
+                return result
+
+            raise STTRecognitionError(
+                "STT engine returned an invalid result."
             )
 
-            if voice:
-                engine.setProperty("voice", voice)
+        except VoiceError:
+            raise
 
-            for chunk in chunks:
-                engine.say(chunk)
+        except Exception as exc:
+            raise STTRecognitionError(
+                f"Recognition failed: {exc}"
+            ) from exc
 
-            engine.save_to_file(
-                "\n".join(chunks),
-                str(output_path),
+    # ========================================================
+    # Text Processing
+    # ========================================================
+
+    def _clean_text(self, text: str) -> str:
+        """Clean recognized speech."""
+
+        if not text:
+            return ""
+
+        text = str(text)
+
+        # Remove control characters.
+        text = re.sub(
+            r"[\x00-\x08\x0B\x0C\x0E-\x1F]",
+            " ",
+            text,
+        )
+
+        # Normalize whitespace.
+        text = re.sub(
+            r"[ \t]+",
+            " ",
+            text,
+        )
+
+        text = re.sub(
+            r"\n{3,}",
+            "\n\n",
+            text,
+        )
+
+        return text.strip()
+
+    def _combine_text(
+        self,
+        parts: List[str],
+    ) -> str:
+        """Combine recognized chunks in their original order."""
+
+        cleaned_parts = [
+            part.strip()
+            for part in parts
+            if part and part.strip()
+        ]
+
+        if not cleaned_parts:
+            return ""
+
+        return " ".join(cleaned_parts).strip()
+
+    # ========================================================
+    # Engine
+    # ========================================================
+
+    def _create_default_engine(self):
+        """
+        Create the default local STT engine.
+
+        SpeechRecognition is used as an adapter when available.
+        The actual recognition backend remains isolated from
+        StudyGemma.
+        """
+
+        try:
+            import speech_recognition as sr
+
+            return _SpeechRecognitionEngine(sr)
+
+        except ImportError:
+            return _UnavailableSTTEngine()
+
+
+# ============================================================
+# SpeechRecognition Adapter
+# ============================================================
+
+class _SpeechRecognitionEngine:
+    """
+    Adapter around the SpeechRecognition package.
+
+    This adapter intentionally keeps the main service independent
+    from the underlying recognition API.
+    """
+
+    def __init__(self, speech_recognition_module):
+        self.sr = speech_recognition_module
+
+    def recognize(
+        self,
+        audio_path: Path,
+        language: str,
+    ) -> Dict[str, Any]:
+        """
+        Recognize speech from WAV audio.
+
+        The SpeechRecognition package can work with several
+        backends. This adapter uses the package's local audio
+        loading and a configurable recognition backend.
+        """
+
+        if audio_path.suffix.lower() != ".wav":
+            raise STTRecognitionError(
+                "The default adapter currently requires WAV "
+                "input. Convert other formats before use or "
+                "provide a custom STT engine."
             )
 
-            engine.runAndWait()
+        recognizer = self.sr.Recognizer()
+
+        try:
+            with self.sr.AudioFile(str(audio_path)) as source:
+                audio = recognizer.record(source)
+
+            # The default backend may use an online service.
+            # This is kept behind the adapter so it can be
+            # replaced by a fully local engine.
+            text = recognizer.recognize_google(
+                audio,
+                language=self._language_locale(language),
+            )
 
             return {
-                "duration": None,
+                "text": text,
+                "confidence": None,
             }
 
-        finally:
-            try:
-                engine.stop()
-            except Exception:
-                pass
+        except self.sr.UnknownValueError as exc:
+            raise STTRecognitionError(
+                "Speech could not be understood."
+            ) from exc
+
+        except self.sr.RequestError as exc:
+            raise STTRecognitionError(
+                f"Speech recognition service error: {exc}"
+            ) from exc
+
+        except STTRecognitionError:
+            raise
+
+        except Exception as exc:
+            raise STTRecognitionError(
+                f"Audio recognition failed: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _language_locale(language: str) -> str:
+        """Map StudyGemma language codes to recognition locales."""
+
+        locales = {
+            "en": "en-IN",
+            "hi": "hi-IN",
+            "mr": "mr-IN",
+            "ur": "ur-IN",
+        }
+
+        return locales.get(language, language)
 
 
 # ============================================================
 # Missing Engine Adapter
 # ============================================================
 
-class _UnavailableTTSEngine:
-    """Fallback engine when no supported TTS dependency exists."""
+class _UnavailableSTTEngine:
+    """Fallback when no STT dependency is installed."""
 
-    def generate(self, **kwargs):
-        raise TTSGenerationError(
-            "No TTS engine is available. "
-            "Install a supported local TTS engine "
-            "or provide a custom engine."
+    def recognize(self, **kwargs):
+        raise STTRecognitionError(
+            "No speech-to-text engine is available. "
+            "Install a supported STT dependency or provide "
+            "a custom local engine."
         )
 
 
 # ============================================================
-# Convenience Functions
+# Convenience API
 # ============================================================
 
-_default_tts: Optional[TextToSpeech] = None
+_default_stt: Optional[SpeechToText] = None
 
 
-def get_tts_service(
-    output_dir: Optional[str | Path] = None,
-) -> TextToSpeech:
-    """Return a reusable TTS service instance."""
+def get_stt_service() -> SpeechToText:
+    """Return a reusable SpeechToText instance."""
 
-    global _default_tts
+    global _default_stt
 
-    if _default_tts is None:
-        _default_tts = TextToSpeech(
-            output_dir=output_dir
-        )
+    if _default_stt is None:
+        _default_stt = SpeechToText()
 
-    return _default_tts
+    return _default_stt
 
 
-def text_to_speech(
-    text: str,
+def speech_to_text(
+    audio_path: str | Path,
     language: str = "en",
-    output_path: Optional[str | Path] = None,
     **kwargs,
-) -> TTSResult:
-    """
-    Convenience function for StudyGemma services.
-    """
+) -> STTResult:
+    """Convenience function for StudyGemma."""
 
-    service = get_tts_service()
+    service = get_stt_service()
 
-    return service.synthesize(
-        text=text,
+    return service.transcribe(
+        audio_path=audio_path,
         language=language,
-        output_path=output_path,
         **kwargs,
     )
 
 
 __all__ = [
     "VoiceError",
-    "TTSGenerationError",
+    "STTRecognitionError",
     "UnsupportedLanguageError",
-    "InvalidTextError",
-    "AudioOutputError",
-    "TTSResult",
-    "TTSConfig",
-    "TextToSpeech",
-    "get_tts_service",
-    "text_to_speech",
+    "UnsupportedAudioFormatError",
+    "InvalidAudioError",
+    "AudioProcessingError",
+    "STTResult",
+    "STTConfig",
+    "SpeechToText",
+    "get_stt_service",
+    "speech_to_text",
 ]

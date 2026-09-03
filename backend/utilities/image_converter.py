@@ -2,6 +2,7 @@
 StudyGemma - Image Converter
 
 Converts images between supported formats with:
+
 - Automatic input format detection
 - JPEG, PNG, WEBP, BMP and TIFF support
 - Quality control
@@ -46,16 +47,12 @@ class ConversionResult:
     success: bool
     input_path: str
     output_path: Optional[str] = None
-
     input_format: Optional[str] = None
     output_format: Optional[str] = None
-
     original_size: int = 0
     output_size: int = 0
-
     original_dimensions: tuple[int, int] = (0, 0)
     output_dimensions: tuple[int, int] = (0, 0)
-
     quality: Optional[int] = None
     error: Optional[str] = None
 
@@ -121,7 +118,10 @@ class ImageConverter:
     MIN_QUALITY = 1
     MAX_QUALITY = 100
 
-    def __init__(self, default_quality: int = DEFAULT_QUALITY):
+    def __init__(
+        self,
+        default_quality: int = DEFAULT_QUALITY,
+    ):
         self._validate_quality(default_quality)
         self.default_quality = default_quality
 
@@ -189,10 +189,13 @@ class ImageConverter:
             max_width,
             max_height,
         )
+        self._validate_background(background)
+        self._validate_overwrite(overwrite)
+
+        created_output: Optional[Path] = None
 
         try:
             with Image.open(input_file) as source:
-
                 # Verify that Pillow recognized the image.
                 source_format = self._detect_format(
                     source,
@@ -226,6 +229,11 @@ class ImageConverter:
                     overwrite=overwrite,
                 )
 
+                if final_output.resolve() == input_file.resolve():
+                    raise InvalidConversionParameterError(
+                        "Output path must be different from the input path."
+                    )
+
                 save_options = self._build_save_options(
                     target_format,
                     quality,
@@ -236,6 +244,8 @@ class ImageConverter:
                     format=target_format,
                     **save_options,
                 )
+
+                created_output = final_output
 
                 # Verify generated output.
                 self._validate_output(final_output)
@@ -256,9 +266,14 @@ class ImageConverter:
                 )
 
         except ImageConversionError:
+            if created_output is not None:
+                self._cleanup_output(created_output)
             raise
 
         except Exception as exc:
+            if created_output is not None:
+                self._cleanup_output(created_output)
+
             raise ImageConversionError(
                 f"Image conversion failed: {exc}"
             ) from exc
@@ -327,11 +342,12 @@ class ImageConverter:
 
         try:
             with Image.open(path) as image:
-
                 image_format = self._detect_format(
                     image,
                     path,
                 )
+
+                file_size = path.stat().st_size
 
                 return {
                     "path": str(path),
@@ -341,15 +357,18 @@ class ImageConverter:
                     "height": image.height,
                     "dimensions": image.size,
                     "mode": image.mode,
-                    "size": path.stat().st_size,
+                    "size": file_size,
                     "size_mb": round(
-                        path.stat().st_size / (1024 * 1024),
+                        file_size / (1024 * 1024),
                         2,
                     ),
                     "has_transparency": self._has_transparency(
                         image
                     ),
                 }
+
+        except ImageConversionError:
+            raise
 
         except Exception as exc:
             raise InvalidImageError(
@@ -379,16 +398,27 @@ class ImageConverter:
                 f"Input path is not a file: {path}"
             )
 
-        if path.stat().st_size == 0:
+        try:
+            if path.stat().st_size == 0:
+                raise InvalidImageError(
+                    "Input image is empty."
+                )
+        except OSError as exc:
             raise InvalidImageError(
-                "Input image is empty."
-            )
+                f"Unable to access input image: {path}"
+            ) from exc
 
     @classmethod
-    def _validate_quality(cls, quality: int) -> None:
+    def _validate_quality(
+        cls,
+        quality: int,
+    ) -> None:
         """Validate image quality."""
 
-        if not isinstance(quality, int):
+        if isinstance(quality, bool) or not isinstance(
+            quality,
+            int,
+        ):
             raise InvalidConversionParameterError(
                 "quality must be an integer."
             )
@@ -410,14 +440,70 @@ class ImageConverter:
     ) -> None:
         """Validate optional dimensions."""
 
-        if max_width is not None and max_width <= 0:
+        if max_width is not None:
+            if isinstance(max_width, bool) or not isinstance(
+                max_width,
+                int,
+            ):
+                raise InvalidConversionParameterError(
+                    "max_width must be an integer."
+                )
+
+            if max_width <= 0:
+                raise InvalidConversionParameterError(
+                    "max_width must be greater than zero."
+                )
+
+        if max_height is not None:
+            if isinstance(max_height, bool) or not isinstance(
+                max_height,
+                int,
+            ):
+                raise InvalidConversionParameterError(
+                    "max_height must be an integer."
+                )
+
+            if max_height <= 0:
+                raise InvalidConversionParameterError(
+                    "max_height must be greater than zero."
+                )
+
+    @staticmethod
+    def _validate_background(
+        background: str,
+    ) -> None:
+        """Validate JPEG background color."""
+
+        if not isinstance(background, str):
             raise InvalidConversionParameterError(
-                "max_width must be greater than zero."
+                "background must be a color string."
             )
 
-        if max_height is not None and max_height <= 0:
+        if not background.strip():
             raise InvalidConversionParameterError(
-                "max_height must be greater than zero."
+                "background cannot be empty."
+            )
+
+        try:
+            Image.new(
+                "RGB",
+                (1, 1),
+                background,
+            )
+        except Exception as exc:
+            raise InvalidConversionParameterError(
+                f"Invalid background color: {background}"
+            ) from exc
+
+    @staticmethod
+    def _validate_overwrite(
+        overwrite: bool,
+    ) -> None:
+        """Validate overwrite parameter."""
+
+        if not isinstance(overwrite, bool):
+            raise InvalidConversionParameterError(
+                "overwrite must be a boolean."
             )
 
     # ==================================================================
@@ -425,15 +511,23 @@ class ImageConverter:
     # ==================================================================
 
     @classmethod
-    def _normalize_format(cls, image_format: str) -> str:
+    def _normalize_format(
+        cls,
+        image_format: str,
+    ) -> str:
         """Normalize a format name."""
 
-        if not image_format:
+        if image_format is None:
             raise UnsupportedFormatError(
-                "Output format cannot be empty."
+                "Image format cannot be empty."
             )
 
         value = str(image_format).strip().upper()
+
+        if not value:
+            raise UnsupportedFormatError(
+                "Image format cannot be empty."
+            )
 
         if value.startswith("."):
             value = value[1:]
@@ -545,9 +639,7 @@ class ImageConverter:
         # --------------------------------------------------------------
 
         if target_format == "JPEG":
-
             if has_transparency:
-
                 if image.mode != "RGBA":
                     image = image.convert("RGBA")
 
@@ -572,7 +664,6 @@ class ImageConverter:
         # --------------------------------------------------------------
 
         elif target_format == "PNG":
-
             if image.mode not in (
                 "1",
                 "L",
@@ -588,9 +679,11 @@ class ImageConverter:
         # --------------------------------------------------------------
 
         elif target_format == "WEBP":
-
             if has_transparency:
-                if image.mode != "RGBA":
+                if image.mode not in (
+                    "RGBA",
+                    "LA",
+                ):
                     return image.convert("RGBA")
             else:
                 if image.mode not in (
@@ -605,9 +698,11 @@ class ImageConverter:
         # --------------------------------------------------------------
 
         elif target_format == "BMP":
-
-            # BMP support for alpha varies, so use RGB/RGBA only.
-            if image.mode not in ("RGB", "RGBA", "L"):
+            if image.mode not in (
+                "RGB",
+                "RGBA",
+                "L",
+            ):
                 return image.convert("RGB")
 
         # --------------------------------------------------------------
@@ -615,7 +710,6 @@ class ImageConverter:
         # --------------------------------------------------------------
 
         elif target_format == "TIFF":
-
             if image.mode not in (
                 "1",
                 "L",
@@ -682,16 +776,20 @@ class ImageConverter:
         """Create a safe output path."""
 
         if output_path is not None:
-
             output = Path(output_path)
 
-            output.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
+            try:
+                output.parent.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+            except OSError as exc:
+                raise ImageConversionError(
+                    f"Unable to create output directory: "
+                    f"{output.parent}"
+                ) from exc
 
         else:
-
             extension = cls.EXTENSIONS[output_format]
 
             output = (
@@ -699,7 +797,6 @@ class ImageConverter:
                 / f"{input_file.stem}_converted{extension}"
             )
 
-        # Prevent accidental overwrite.
         if output.exists() and not overwrite:
             output = cls._find_available_path(output)
 
@@ -714,7 +811,6 @@ class ImageConverter:
         counter = 1
 
         while True:
-
             candidate = (
                 path.parent
                 / f"{path.stem}_{counter}{path.suffix}"
@@ -736,10 +832,20 @@ class ImageConverter:
                 "Converted image was not created."
             )
 
-        if output_path.stat().st_size == 0:
+        if not output_path.is_file():
             raise ImageConversionError(
-                "Converted image is empty."
+                "Converted output is not a file."
             )
+
+        try:
+            if output_path.stat().st_size == 0:
+                raise ImageConversionError(
+                    "Converted image is empty."
+                )
+        except OSError as exc:
+            raise ImageConversionError(
+                "Unable to read converted image."
+            ) from exc
 
         try:
             with Image.open(output_path) as image:
@@ -749,6 +855,19 @@ class ImageConverter:
             raise ImageConversionError(
                 f"Generated image failed validation: {exc}"
             ) from exc
+
+    @staticmethod
+    def _cleanup_output(
+        output_path: Path,
+    ) -> None:
+        """Remove a partially generated output file."""
+
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except OSError:
+            # Cleanup failure must not hide the original exception.
+            pass
 
 
 # ======================================================================
