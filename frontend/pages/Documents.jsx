@@ -12,7 +12,6 @@ import {
   FileImage,
   FileText,
   FolderOpen,
-  MoreVertical,
   Plus,
   Search,
   Trash2,
@@ -32,8 +31,15 @@ const allowedExtensions = [
 ];
 
 function getFileExtension(fileName) {
+  if (typeof fileName !== "string") {
+    return "";
+  }
+
   const lastDot = fileName.lastIndexOf(".");
-  return lastDot === -1 ? "" : fileName.slice(lastDot).toLowerCase();
+
+  return lastDot === -1
+    ? ""
+    : fileName.slice(lastDot).toLowerCase();
 }
 
 function getFileIcon(fileName) {
@@ -43,15 +49,11 @@ function getFileIcon(fileName) {
     return FileImage;
   }
 
-  if (extension === ".pdf") {
-    return FileText;
-  }
-
-  if (extension === ".txt") {
-    return FileText;
-  }
-
-  if (extension === ".docx") {
+  if (
+    extension === ".pdf" ||
+    extension === ".txt" ||
+    extension === ".docx"
+  ) {
     return FileText;
   }
 
@@ -64,13 +66,18 @@ function getFileType(fileName) {
   if (extension === ".pdf") return "PDF";
   if (extension === ".docx") return "DOCX";
   if (extension === ".txt") return "TXT";
-  if ([".jpg", ".jpeg", ".png"].includes(extension)) return "IMAGE";
+
+  if ([".jpg", ".jpeg", ".png"].includes(extension)) {
+    return "IMAGE";
+  }
 
   return "FILE";
 }
 
 function formatFileSize(bytes) {
-  if (!bytes) return "Unknown size";
+  if (!bytes) {
+    return "Unknown size";
+  }
 
   if (bytes < 1024) {
     return `${bytes} B`;
@@ -95,10 +102,16 @@ function Documents() {
   const [selectedFile, setSelectedFile] = useState(null);
 
   const [previewFile, setPreviewFile] = useState(null);
+  const [previewText, setPreviewText] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState("");
 
   const fileInputRef = useRef(null);
 
+  /*
+   * Load subjects from localStorage
+   */
   useEffect(() => {
     try {
       const savedSubjects = localStorage.getItem(STORAGE_KEY);
@@ -110,40 +123,131 @@ function Documents() {
           setSubjects(parsed);
         }
       }
-    } catch {
+    } catch (error) {
+      console.error("Unable to load saved subjects:", error);
       setSubjects([]);
     } finally {
       setSubjectsLoaded(true);
     }
   }, []);
 
-  useEffect(() => {
-  const loadBackendDocuments = async () => {
-    try {
-      const result = await getDocuments();
-
-      if (!result.success || !Array.isArray(result.documents)) {
-        return;
-      }
-
-      console.log("Backend documents:", result.documents);
-    } catch (error) {
-      console.error(
-        "Unable to load backend documents:",
-        error,
-      );
-    }
-  };
-
-  loadBackendDocuments();
-}, []);
-
+  /*
+   * Reconcile locally stored files with backend documents
+   */
   useEffect(() => {
     if (!subjectsLoaded) {
       return;
     }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(subjects));
+    const loadBackendDocuments = async () => {
+      try {
+        const result = await getDocuments();
+
+        if (
+          !result.success ||
+          !Array.isArray(result.documents)
+        ) {
+          return;
+        }
+
+        setSubjects((currentSubjects) =>
+          currentSubjects.map((subject) => {
+            const files = subject.files || [];
+            let filesChanged = false;
+
+            const updatedFiles = files.map((file) => {
+              const backendDocument = result.documents.find(
+                (document) =>
+                  String(document.document_id) ===
+                    String(file.id) ||
+                  document.stored_filename ===
+                    file.storedFilename,
+              );
+
+              if (!backendDocument) {
+                return file;
+              }
+
+              const fileName =
+                typeof backendDocument.original_filename ===
+                "string"
+                  ? backendDocument.original_filename
+                  : typeof backendDocument.filename ===
+                    "string"
+                    ? backendDocument.filename
+                    : file.name;
+
+              const updatedFile = {
+                ...file,
+                id: backendDocument.document_id,
+                name: fileName,
+                size:
+                  backendDocument.file_size ??
+                  file.size,
+                extension:
+                  getFileExtension(fileName) ||
+                  file.extension,
+                storedFilename:
+                  backendDocument.stored_filename ||
+                  file.storedFilename,
+              };
+
+              const changed =
+                updatedFile.id !== file.id ||
+                updatedFile.name !== file.name ||
+                updatedFile.size !== file.size ||
+                updatedFile.extension !== file.extension ||
+                updatedFile.storedFilename !==
+                  file.storedFilename;
+
+              if (changed) {
+                filesChanged = true;
+                return updatedFile;
+              }
+
+              return file;
+            });
+
+            if (!filesChanged) {
+              return subject;
+            }
+
+            return {
+              ...subject,
+              files: updatedFiles,
+            };
+          }),
+        );
+      } catch (error) {
+        console.error(
+          "Unable to reconcile backend documents:",
+          error,
+        );
+      }
+    };
+
+    loadBackendDocuments();
+  }, [subjectsLoaded]);
+
+  /*
+   * Save subjects to localStorage
+   */
+  useEffect(() => {
+    if (!subjectsLoaded) {
+      return;
+    }
+
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(subjects),
+      );
+    } catch (error) {
+      console.error(
+        "Unable to save subjects:",
+        error,
+      );
+    }
   }, [subjects, subjectsLoaded]);
 
   const activeSubject = subjects.find(
@@ -151,9 +255,14 @@ function Documents() {
   );
 
   const filteredSubjects = subjects.filter((subject) =>
-    subject.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    subject.name
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase()),
   );
 
+  /*
+   * Add subject
+   */
   const addSubject = () => {
     const trimmedName = subjectName.trim();
 
@@ -168,20 +277,31 @@ function Documents() {
       files: [],
     };
 
-    setSubjects((current) => [...current, newSubject]);
+    setSubjects((current) => [
+      ...current,
+      newSubject,
+    ]);
+
     setSubjectName("");
     setShowAddSubject(false);
   };
 
+  /*
+   * Delete subject
+   */
   const deleteSubject = (subjectId) => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this subject and its study materials?",
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setSubjects((current) =>
-      current.filter((subject) => subject.id !== subjectId),
+      current.filter(
+        (subject) => subject.id !== subjectId,
+      ),
     );
 
     if (activeSubjectId === subjectId) {
@@ -189,19 +309,30 @@ function Documents() {
     }
   };
 
+  /*
+   * Open subject
+   */
   const openSubject = (subjectId) => {
     setActiveSubjectId(subjectId);
   };
 
+  /*
+   * Close subject
+   */
   const closeSubject = () => {
     setActiveSubjectId(null);
     setSearchTerm("");
   };
 
+  /*
+   * File selection
+   */
   const handleFileSelect = (event) => {
     const file = event.target.files?.[0];
 
-    if (!file) return;
+    if (!file) {
+      return;
+    }
 
     const extension = getFileExtension(file.name);
 
@@ -217,6 +348,9 @@ function Documents() {
     setSelectedFile(file);
   };
 
+  /*
+   * Upload material
+   */
   const uploadMaterial = async () => {
     if (!activeSubjectId) {
       alert("Please open a subject first.");
@@ -234,7 +368,9 @@ function Documents() {
       result = await uploadDocument(selectedFile);
 
       if (!result.success) {
-        throw new Error(result.error || "Upload failed.");
+        throw new Error(
+          result.error || "Upload failed.",
+        );
       }
     } catch (error) {
       alert(
@@ -242,6 +378,7 @@ function Documents() {
           error.message ||
           "Unable to upload the document.",
       );
+
       return;
     }
 
@@ -260,7 +397,10 @@ function Documents() {
         subject.id === activeSubjectId
           ? {
               ...subject,
-              files: [...(subject.files || []), newFile],
+              files: [
+                ...(subject.files || []),
+                newFile,
+              ],
             }
           : subject,
       ),
@@ -274,14 +414,21 @@ function Documents() {
     }
   };
 
+  /*
+   * Remove file from subject
+   */
   const removeFile = (fileId) => {
-    if (!activeSubjectId) return;
+    if (!activeSubjectId) {
+      return;
+    }
 
     const confirmed = window.confirm(
       "Are you sure you want to delete this study material?",
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setSubjects((current) =>
       current.map((subject) =>
@@ -298,20 +445,28 @@ function Documents() {
 
     if (previewFile?.id === fileId) {
       setPreviewFile(null);
+      setPreviewText("");
+      setPreviewLoading(false);
     }
   };
 
-const getFileUrl = (file) => {
-  if (!file?.storedFilename) {
-    return null;
-  }
+  /*
+   * Get permanent backend file URL
+   */
+  const getFileUrl = (file) => {
+    if (!file?.storedFilename) {
+      return null;
+    }
 
-  return `http://127.0.0.1:5000/api/documents/file/${encodeURIComponent(
-    file.storedFilename,
-  )}`;
-};
+    return `http://127.0.0.1:5000/api/documents/file/${encodeURIComponent(
+      file.storedFilename,
+    )}`;
+  };
 
-  const downloadFile = (file) => {
+  /*
+   * Download file
+   */
+  const downloadFile = async (file) => {
     const fileUrl = getFileUrl(file);
 
     if (!fileUrl) {
@@ -319,16 +474,41 @@ const getFileUrl = (file) => {
       return;
     }
 
-    const link = document.createElement("a");
-    link.href = fileUrl;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    try {
+      const response = await fetch(fileUrl);
+
+      if (!response.ok) {
+        throw new Error(
+          "Unable to download the file.",
+        );
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+
+      link.href = blobUrl;
+      link.download = file.name || "download";
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Download failed:", error);
+      alert("Unable to download the file.");
+    }
   };
 
+  /*
+   * Check if file can be previewed
+   */
   const canPreview = (file) => {
-    if (!file) return false;
+    if (!file) {
+      return false;
+    }
 
     return [
       ".pdf",
@@ -339,12 +519,72 @@ const getFileUrl = (file) => {
     ].includes(file.extension);
   };
 
+  /*
+   * Open preview
+   */
+  const openPreview = async (file) => {
+    setPreviewFile(file);
+    setPreviewText("");
+    setPreviewLoading(false);
+
+    if (file.extension !== ".txt") {
+      return;
+    }
+
+    const fileUrl = getFileUrl(file);
+
+    if (!fileUrl) {
+      setPreviewText(
+        "This file is not available.",
+      );
+      return;
+    }
+
+    setPreviewLoading(true);
+
+    try {
+      const response = await fetch(fileUrl);
+
+      if (!response.ok) {
+        throw new Error(
+          "Unable to load preview.",
+        );
+      }
+
+      const text = await response.text();
+
+      setPreviewText(text);
+    } catch (error) {
+      console.error(
+        "Preview failed:",
+        error,
+      );
+
+      setPreviewText(
+        "Unable to load this file.",
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  /*
+   * Close preview
+   */
+  const closePreview = () => {
+    setPreviewFile(null);
+    setPreviewText("");
+    setPreviewLoading(false);
+  };
+
   return (
     <div className="relative min-h-[calc(100vh-80px)] overflow-hidden bg-gradient-to-br from-[#063b3b] via-[#06272d] to-[#03070b] px-4 py-6 sm:px-6 lg:px-8">
       {/* Background atmosphere */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-20 h-[420px] w-[420px] rounded-full bg-teal-500/10 blur-3xl" />
+
         <div className="absolute right-[-120px] top-1/4 h-[480px] w-[480px] rounded-full bg-cyan-500/10 blur-3xl" />
+
         <div className="absolute bottom-[-180px] left-1/3 h-[420px] w-[420px] rounded-full bg-teal-400/5 blur-3xl" />
       </div>
 
@@ -372,14 +612,17 @@ const getFileUrl = (file) => {
                   </div>
 
                   <p className="max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-                    Organize your study materials subject-wise and keep all
-                    your learning files in one place.
+                    Organize your study materials
+                    subject-wise and keep all your
+                    learning files in one place.
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setShowAddSubject(true)}
+                  onClick={() =>
+                    setShowAddSubject(true)
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-500/90 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-teal-400 active:scale-[0.99]"
                 >
                   <Plus size={18} />
@@ -400,7 +643,11 @@ const getFileUrl = (file) => {
                   <input
                     type="text"
                     value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
+                    onChange={(event) =>
+                      setSearchTerm(
+                        event.target.value,
+                      )
+                    }
                     placeholder="Search subjects..."
                     className="w-full rounded-2xl border border-white/10 bg-[#061214]/65 py-3.5 pl-11 pr-4 text-sm text-white outline-none backdrop-blur-xl transition placeholder:text-slate-600 focus:border-teal-400/30"
                   />
@@ -420,13 +667,16 @@ const getFileUrl = (file) => {
                 </h2>
 
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                  Add a subject to start organizing your PDFs, documents,
-                  notes and images.
+                  Add a subject to start organizing
+                  your PDFs, documents, notes and
+                  images.
                 </p>
 
                 <button
                   type="button"
-                  onClick={() => setShowAddSubject(true)}
+                  onClick={() =>
+                    setShowAddSubject(true)
+                  }
                   className="mt-6 inline-flex items-center gap-2 rounded-xl border border-teal-300/20 bg-teal-400/10 px-5 py-3 text-sm font-medium text-teal-300 transition hover:bg-teal-400/15"
                 >
                   <Plus size={17} />
@@ -435,73 +685,104 @@ const getFileUrl = (file) => {
               </div>
             ) : filteredSubjects.length === 0 ? (
               <div className="rounded-3xl border border-white/10 bg-[#061214]/65 px-6 py-14 text-center backdrop-blur-xl">
-                <Search className="mx-auto text-slate-600" size={30} />
+                <Search
+                  className="mx-auto text-slate-600"
+                  size={30}
+                />
 
                 <h2 className="mt-4 font-semibold text-white">
                   No matching subjects
                 </h2>
 
                 <p className="mt-2 text-sm text-slate-500">
-                  Try searching with a different subject name.
+                  Try searching with a different
+                  subject name.
                 </p>
               </div>
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredSubjects.map((subject) => {
-                  const fileCount = subject.files?.length || 0;
+                {filteredSubjects.map(
+                  (subject) => {
+                    const fileCount =
+                      subject.files?.length || 0;
 
-                  return (
-                    <div
-                      key={subject.id}
-                      className="group relative rounded-3xl border border-white/10 bg-[#061214]/65 p-5 shadow-xl shadow-black/10 backdrop-blur-xl transition hover:border-teal-300/20 hover:bg-[#071719]/80"
-                    >
-                      <div className="flex items-start justify-between">
-                        <button
-                          type="button"
-                          onClick={() => openSubject(subject.id)}
-                          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-teal-300/15 bg-teal-400/10 text-teal-300 transition group-hover:bg-teal-400/15"
-                        >
-                          <BookOpen size={23} />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteSubject(subject.id)}
-                          aria-label={`Delete ${subject.name}`}
-                          className="rounded-lg p-2 text-slate-600 transition hover:bg-red-500/10 hover:text-red-300"
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => openSubject(subject.id)}
-                        className="mt-5 block w-full text-left"
+                    return (
+                      <div
+                        key={subject.id}
+                        className="group relative rounded-3xl border border-white/10 bg-[#061214]/65 p-5 shadow-xl shadow-black/10 backdrop-blur-xl transition hover:border-teal-300/20 hover:bg-[#071719]/80"
                       >
-                        <h2 className="truncate text-lg font-semibold text-white">
-                          {subject.name}
-                        </h2>
+                        <div className="flex items-start justify-between">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openSubject(
+                                subject.id,
+                              )
+                            }
+                            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-teal-300/15 bg-teal-400/10 text-teal-300 transition group-hover:bg-teal-400/15"
+                          >
+                            <BookOpen size={23} />
+                          </button>
 
-                        <p className="mt-2 text-sm text-slate-500">
-                          {fileCount}{" "}
-                          {fileCount === 1 ? "study material" : "study materials"}
-                        </p>
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteSubject(
+                                subject.id,
+                              )
+                            }
+                            aria-label={`Delete ${subject.name}`}
+                            className="rounded-lg p-2 text-slate-600 transition hover:bg-red-500/10 hover:text-red-300"
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
 
-                      <div className="mt-5 border-t border-white/[0.06] pt-4">
                         <button
                           type="button"
-                          onClick={() => openSubject(subject.id)}
-                          className="flex w-full items-center justify-between text-sm text-slate-400 transition hover:text-teal-300"
+                          onClick={() =>
+                            openSubject(
+                              subject.id,
+                            )
+                          }
+                          className="mt-5 block w-full text-left"
                         >
-                          <span>Open Subject</span>
-                          <ChevronLeft className="rotate-180" size={17} />
+                          <h2 className="truncate text-lg font-semibold text-white">
+                            {subject.name}
+                          </h2>
+
+                          <p className="mt-2 text-sm text-slate-500">
+                            {fileCount}{" "}
+                            {fileCount === 1
+                              ? "study material"
+                              : "study materials"}
+                          </p>
                         </button>
+
+                        <div className="mt-5 border-t border-white/[0.06] pt-4">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openSubject(
+                                subject.id,
+                              )
+                            }
+                            className="flex w-full items-center justify-between text-sm text-slate-400 transition hover:text-teal-300"
+                          >
+                            <span>
+                              Open Subject
+                            </span>
+
+                            <ChevronLeft
+                              className="rotate-180"
+                              size={17}
+                            />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  },
+                )}
               </div>
             )}
           </>
@@ -537,13 +818,17 @@ const getFileUrl = (file) => {
                   </div>
 
                   <p className="text-sm text-slate-500">
-                    {activeSubject.files?.length || 0} study materials
+                    {activeSubject.files?.length ||
+                      0}{" "}
+                    study materials
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setShowUpload(true)}
+                  onClick={() =>
+                    setShowUpload(true)
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-500/90 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-teal-400 active:scale-[0.99]"
                 >
                   <Upload size={18} />
@@ -564,13 +849,16 @@ const getFileUrl = (file) => {
                 </h2>
 
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                  Upload PDFs, Word documents, text files or images for this
+                  Upload PDFs, Word documents,
+                  text files or images for this
                   subject.
                 </p>
 
                 <button
                   type="button"
-                  onClick={() => setShowUpload(true)}
+                  onClick={() =>
+                    setShowUpload(true)
+                  }
                   className="mt-6 inline-flex items-center gap-2 rounded-xl border border-teal-300/20 bg-teal-400/10 px-5 py-3 text-sm font-medium text-teal-300 transition hover:bg-teal-400/15"
                 >
                   <Plus size={17} />
@@ -579,66 +867,97 @@ const getFileUrl = (file) => {
               </div>
             ) : (
               <div className="grid gap-4">
-                {activeSubject.files.map((file) => {
-                  const FileIcon = getFileIcon(file.name);
-                  const type = getFileType(file.name);
+                {activeSubject.files.map(
+                  (file) => {
+                    const FileIcon =
+                      getFileIcon(file.name);
 
-                  return (
-                    <div
-                      key={file.id}
-                      className="group rounded-2xl border border-white/10 bg-[#061214]/65 p-4 backdrop-blur-xl transition hover:border-teal-300/15 hover:bg-[#071719]/80 sm:p-5"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-teal-300">
-                          <FileIcon size={22} />
-                        </div>
+                    const type =
+                      getFileType(file.name);
 
-                        <div className="min-w-0 flex-1">
-                          <h3 className="truncate font-medium text-white">
-                            {file.name}
-                          </h3>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span>{type}</span>
-                            <span>•</span>
-                            <span>{formatFileSize(file.size)}</span>
+                    return (
+                      <div
+                        key={file.id}
+                        className="group rounded-2xl border border-white/10 bg-[#061214]/65 p-4 backdrop-blur-xl transition hover:border-teal-300/15 hover:bg-[#071719]/80 sm:p-5"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-teal-300">
+                            <FileIcon size={22} />
                           </div>
-                        </div>
 
-                        <div className="flex shrink-0 items-center gap-1">
-                          {canPreview(file) && (
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate font-medium text-white">
+                              {file.name}
+                            </h3>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <span>
+                                {type}
+                              </span>
+
+                              <span>•</span>
+
+                              <span>
+                                {formatFileSize(
+                                  file.size,
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-1">
+                            {canPreview(file) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openPreview(
+                                    file,
+                                  )
+                                }
+                                aria-label={`Preview ${file.name}`}
+                                className="rounded-xl p-2.5 text-slate-500 transition hover:bg-teal-400/10 hover:text-teal-300"
+                              >
+                                <Eye
+                                  size={18}
+                                />
+                              </button>
+                            )}
+
                             <button
                               type="button"
-                              onClick={() => setPreviewFile(file)}
-                              aria-label={`Preview ${file.name}`}
+                              onClick={() =>
+                                downloadFile(
+                                  file,
+                                )
+                              }
+                              aria-label={`Download ${file.name}`}
                               className="rounded-xl p-2.5 text-slate-500 transition hover:bg-teal-400/10 hover:text-teal-300"
                             >
-                              <Eye size={18} />
+                              <Download
+                                size={18}
+                              />
                             </button>
-                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => downloadFile(file)}
-                            aria-label={`Download ${file.name}`}
-                            className="rounded-xl p-2.5 text-slate-500 transition hover:bg-teal-400/10 hover:text-teal-300"
-                          >
-                            <Download size={18} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => removeFile(file.id)}
-                            aria-label={`Delete ${file.name}`}
-                            className="rounded-xl p-2.5 text-slate-500 transition hover:bg-red-500/10 hover:text-red-300"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeFile(
+                                  file.id,
+                                )
+                              }
+                              aria-label={`Delete ${file.name}`}
+                              className="rounded-xl p-2.5 text-slate-500 transition hover:bg-red-500/10 hover:text-red-300"
+                            >
+                              <Trash2
+                                size={18}
+                              />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  },
+                )}
               </div>
             )}
           </>
@@ -654,6 +973,7 @@ const getFileUrl = (file) => {
                 <h2 className="text-lg font-semibold text-white">
                   Add Subject
                 </h2>
+
                 <p className="mt-1 text-xs text-slate-500">
                   Create a new study folder.
                 </p>
@@ -661,7 +981,9 @@ const getFileUrl = (file) => {
 
               <button
                 type="button"
-                onClick={() => setShowAddSubject(false)}
+                onClick={() =>
+                  setShowAddSubject(false)
+                }
                 className="rounded-xl p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
               >
                 <X size={19} />
@@ -676,7 +998,11 @@ const getFileUrl = (file) => {
               autoFocus
               type="text"
               value={subjectName}
-              onChange={(event) => setSubjectName(event.target.value)}
+              onChange={(event) =>
+                setSubjectName(
+                  event.target.value,
+                )
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   addSubject();
@@ -689,7 +1015,9 @@ const getFileUrl = (file) => {
             <div className="mt-5 flex gap-3">
               <button
                 type="button"
-                onClick={() => setShowAddSubject(false)}
+                onClick={() =>
+                  setShowAddSubject(false)
+                }
                 className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-slate-400 transition hover:bg-white/[0.07] hover:text-white"
               >
                 Cancel
@@ -716,8 +1044,10 @@ const getFileUrl = (file) => {
                 <h2 className="text-lg font-semibold text-white">
                   Add Study Material
                 </h2>
+
                 <p className="mt-1 text-xs text-slate-500">
-                  Upload material for {activeSubject?.name}.
+                  Upload material for{" "}
+                  {activeSubject?.name}.
                 </p>
               </div>
 
@@ -726,6 +1056,11 @@ const getFileUrl = (file) => {
                 onClick={() => {
                   setShowUpload(false);
                   setSelectedFile(null);
+
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value =
+                      "";
+                  }
                 }}
                 className="rounded-xl p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
               >
@@ -735,7 +1070,9 @@ const getFileUrl = (file) => {
 
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() =>
+                fileInputRef.current?.click()
+              }
               className="w-full rounded-2xl border border-dashed border-teal-300/20 bg-teal-400/[0.04] p-8 text-center transition hover:border-teal-300/35 hover:bg-teal-400/[0.07]"
             >
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-400/10 text-teal-300">
@@ -747,7 +1084,8 @@ const getFileUrl = (file) => {
               </p>
 
               <p className="mt-1 text-xs text-slate-500">
-                PDF · DOCX · TXT · JPG · JPEG · PNG
+                PDF · DOCX · TXT · JPG · JPEG ·
+                PNG
               </p>
 
               {selectedFile && (
@@ -771,6 +1109,11 @@ const getFileUrl = (file) => {
                 onClick={() => {
                   setShowUpload(false);
                   setSelectedFile(null);
+
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value =
+                      "";
+                  }
                 }}
                 className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-slate-400 transition hover:bg-white/[0.07] hover:text-white"
               >
@@ -794,6 +1137,7 @@ const getFileUrl = (file) => {
       {previewFile && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6">
           <div className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#071214] shadow-2xl">
+            {/* Preview Header */}
             <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-medium text-white">
@@ -801,15 +1145,25 @@ const getFileUrl = (file) => {
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  {getFileType(previewFile)} ·{" "}
-                  {formatFileSize(previewFile.size)}
+                  {getFileType(
+                    previewFile.name,
+                  )}{" "}
+                  ·{" "}
+                  {formatFileSize(
+                    previewFile.size,
+                  )}
                 </p>
               </div>
 
               <div className="ml-3 flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => downloadFile(previewFile)}
+                  onClick={() =>
+                    downloadFile(
+                      previewFile,
+                    )
+                  }
+                  aria-label={`Download ${previewFile.name}`}
                   className="rounded-xl p-2.5 text-slate-400 transition hover:bg-teal-400/10 hover:text-teal-300"
                 >
                   <Download size={18} />
@@ -817,7 +1171,8 @@ const getFileUrl = (file) => {
 
                 <button
                   type="button"
-                  onClick={() => setPreviewFile(null)}
+                  onClick={closePreview}
+                  aria-label="Close preview"
                   className="rounded-xl p-2.5 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
                 >
                   <X size={19} />
@@ -825,43 +1180,71 @@ const getFileUrl = (file) => {
               </div>
             </div>
 
+            {/* Preview Content */}
             <div className="min-h-0 flex-1 bg-black/20 p-3 sm:p-5">
-              {[".jpg", ".jpeg", ".png"].includes(previewFile.extension) ? (
+              {/* Images */}
+              {[
+                ".jpg",
+                ".jpeg",
+                ".png",
+              ].includes(
+                previewFile.extension,
+              ) ? (
                 <div className="flex h-full items-center justify-center overflow-auto rounded-2xl border border-white/10 bg-black/30 p-4">
                   <img
-                    src={getFileUrl(previewFile)}
+                    src={getFileUrl(
+                      previewFile,
+                    )}
                     alt={previewFile.name}
                     className="max-h-full max-w-full rounded-xl object-contain"
                   />
                 </div>
-              ) : previewFile.extension === ".pdf" ? (
+              ) : previewFile.extension ===
+                ".pdf" ? (
+                /* PDF */
                 <iframe
-                  src={getFileUrl(previewFile)}
+                  src={getFileUrl(
+                    previewFile,
+                  )}
                   title={previewFile.name}
                   className="h-full w-full rounded-2xl border border-white/10 bg-white"
                 />
-              ) : previewFile.extension === ".txt" ? (
-                <iframe
-                  src={getFileUrl(previewFile)}
-                  title={previewFile.name}
-                  className="h-full w-full rounded-2xl border border-white/10 bg-white"
-                />
+              ) : previewFile.extension ===
+                ".txt" ? (
+                /* TXT */
+                <div className="h-full overflow-auto rounded-2xl border border-white/10 bg-white">
+                  <pre className="min-h-full whitespace-pre-wrap break-words p-6 text-sm leading-7 text-black">
+                    {previewLoading
+                      ? "Loading preview..."
+                      : previewText}
+                  </pre>
+                </div>
               ) : (
+                /* DOCX */
                 <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02] px-6 text-center">
-                  <FileText size={42} className="text-teal-300" />
+                  <FileText
+                    size={42}
+                    className="text-teal-300"
+                  />
 
                   <h3 className="mt-4 font-semibold text-white">
                     DOCX preview unavailable
                   </h3>
 
                   <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-                    DOCX files are stored locally for now. Download the file
-                    to open it in Microsoft Word or another compatible editor.
+                    DOCX files are stored locally
+                    for now. Download the file to
+                    open it in Microsoft Word or
+                    another compatible editor.
                   </p>
 
                   <button
                     type="button"
-                    onClick={() => downloadFile(previewFile)}
+                    onClick={() =>
+                      downloadFile(
+                        previewFile,
+                      )
+                    }
                     className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-teal-400"
                   >
                     <Download size={17} />

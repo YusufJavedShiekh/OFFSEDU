@@ -17,7 +17,7 @@ from rag.rag_service import rag_service
 document_bp = Blueprint(
     "documents",
     __name__,
-    url_prefix="/api/documents"
+    url_prefix="/api/documents",
 )
 
 
@@ -27,6 +27,16 @@ ALLOWED_EXTENSIONS = {
     ".pptx",
     ".txt",
     ".md",
+    ".jpg",
+    ".jpeg",
+    ".png",
+}
+
+
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
 }
 
 
@@ -81,26 +91,28 @@ def list_documents():
             .all()
         )
 
-        return jsonify({
-            "success": True,
-            "documents": [
-                {
-                    "document_id": document.id,
-                    "filename": document.original_filename,
-                    "original_filename": document.original_filename,
-                    "stored_filename": document.stored_filename,
-                    "file_type": document.file_type,
-                    "file_size": document.file_size,
-                    "status": document.status,
-                    "created_at": (
-                        document.created_at.isoformat()
-                        if document.created_at
-                        else None
-                    ),
-                }
-                for document in documents
-            ],
-        })
+        return jsonify(
+            {
+                "success": True,
+                "documents": [
+                    {
+                        "document_id": document.id,
+                        "filename": document.original_filename,
+                        "original_filename": document.original_filename,
+                        "stored_filename": document.stored_filename,
+                        "file_type": document.file_type,
+                        "file_size": document.file_size,
+                        "status": document.status,
+                        "created_at": (
+                            document.created_at.isoformat()
+                            if document.created_at
+                            else None
+                        ),
+                    }
+                    for document in documents
+                ],
+            }
+        )
 
     finally:
         db.close()
@@ -108,41 +120,50 @@ def list_documents():
 
 @document_bp.route("/upload", methods=["POST"])
 def upload_document():
-    """Upload, process, store, and index a document."""
+    """Upload, store, process, and index a document."""
 
     if "file" not in request.files:
-        return jsonify({
-            "success": False,
-            "error": "No file provided",
-        }), 400
+        return jsonify(
+            {
+                "success": False,
+                "error": "No file provided",
+            }
+        ), 400
 
     file = request.files["file"]
 
     if not file.filename:
-        return jsonify({
-            "success": False,
-            "error": "Filename is required",
-        }), 400
+        return jsonify(
+            {
+                "success": False,
+                "error": "Filename is required",
+            }
+        ), 400
 
     original_filename = file.filename
     safe_filename = secure_filename(original_filename)
 
     if not safe_filename:
-        return jsonify({
-            "success": False,
-            "error": "Invalid filename",
-        }), 400
+        return jsonify(
+            {
+                "success": False,
+                "error": "Invalid filename",
+            }
+        ), 400
 
     extension = Path(safe_filename).suffix.lower()
 
     if extension not in ALLOWED_EXTENSIONS:
-        return jsonify({
-            "success": False,
-            "error": (
-                "Unsupported file type. "
-                "Supported types: PDF, DOCX, PPTX, TXT, MD."
-            ),
-        }), 400
+        return jsonify(
+            {
+                "success": False,
+                "error": (
+                    "Unsupported file type. "
+                    "Supported types: "
+                    "PDF, DOCX, PPTX, TXT, MD, JPG, JPEG, PNG."
+                ),
+            }
+        ), 400
 
     unique_filename = (
         f"{uuid4().hex}_{safe_filename}"
@@ -154,12 +175,18 @@ def upload_document():
     document = None
 
     try:
+        # ---------------------------------------------------------
         # 1. Save uploaded file
+        # ---------------------------------------------------------
+
         file.save(file_path)
 
         file_size = file_path.stat().st_size
 
+        # ---------------------------------------------------------
         # 2. Create database record
+        # ---------------------------------------------------------
+
         db = SessionLocal()
 
         document = Document(
@@ -175,7 +202,39 @@ def upload_document():
         db.commit()
         db.refresh(document)
 
-        # 3. Process document using existing processor
+        # ---------------------------------------------------------
+        # 3. Images - Stage 1
+        #
+        # Images are stored successfully but are not processed
+        # through OCR yet.
+        # ---------------------------------------------------------
+
+        if extension in IMAGE_EXTENSIONS:
+            document.status = "stored"
+            db.commit()
+
+            return jsonify(
+                {
+                    "success": True,
+                    "document_id": document.id,
+                    "filename": original_filename,
+                    "stored_filename": unique_filename,
+                    "file_type": extension,
+                    "file_size": file_size,
+                    "path": str(file_path),
+                    "text_length": 0,
+                    "chunks_indexed": 0,
+                    "message": (
+                        "Image uploaded and stored successfully. "
+                        "OCR processing will be added separately."
+                    ),
+                }
+            )
+
+        # ---------------------------------------------------------
+        # 4. Process normal document types
+        # ---------------------------------------------------------
+
         processed = _process_file(
             file_path=file_path,
             extension=extension,
@@ -185,31 +244,44 @@ def upload_document():
             document.status = "failed"
             db.commit()
 
-            return jsonify({
-                "success": False,
-                "document_id": document.id,
-                "filename": original_filename,
-                "error": processed.get(
-                    "error",
-                    "Document processing failed.",
-                ),
-            }), 422
+            return jsonify(
+                {
+                    "success": False,
+                    "document_id": document.id,
+                    "filename": original_filename,
+                    "error": processed.get(
+                        "error",
+                        "Document processing failed.",
+                    ),
+                }
+            ), 422
 
-        # 4. Extract text
+        # ---------------------------------------------------------
+        # 5. Extract text
+        # ---------------------------------------------------------
+
         extracted_text = _extract_text(processed)
 
         if not extracted_text:
             document.status = "failed"
             db.commit()
 
-            return jsonify({
-                "success": False,
-                "document_id": document.id,
-                "filename": original_filename,
-                "error": "No text could be extracted from the document.",
-            }), 422
+            return jsonify(
+                {
+                    "success": False,
+                    "document_id": document.id,
+                    "filename": original_filename,
+                    "error": (
+                        "No text could be extracted "
+                        "from the document."
+                    ),
+                }
+            ), 422
 
-        # 5. Index extracted text into RAG / Chroma
+        # ---------------------------------------------------------
+        # 6. Index extracted text into RAG / Chroma
+        # ---------------------------------------------------------
+
         rag_metadata = {
             "document_id": str(document.id),
             "original_filename": original_filename,
@@ -222,28 +294,36 @@ def upload_document():
             metadata=rag_metadata,
         )
 
-        # 6. Update database record
+        # ---------------------------------------------------------
+        # 7. Update database record
+        # ---------------------------------------------------------
+
         document.extracted_text = extracted_text
         document.status = "processed"
 
         db.commit()
 
-        # 7. Return complete result
-        return jsonify({
-            "success": True,
-            "document_id": document.id,
-            "filename": original_filename,
-            "stored_filename": unique_filename,
-            "file_type": extension,
-            "file_size": file_size,
-            "path": str(file_path),
-            "text_length": len(extracted_text),
-            "chunks_indexed": len(chunk_ids),
-            "message": (
-                "Document uploaded, processed, and "
-                "indexed successfully."
-            ),
-        })
+        # ---------------------------------------------------------
+        # 8. Return complete result
+        # ---------------------------------------------------------
+
+        return jsonify(
+            {
+                "success": True,
+                "document_id": document.id,
+                "filename": original_filename,
+                "stored_filename": unique_filename,
+                "file_type": extension,
+                "file_size": file_size,
+                "path": str(file_path),
+                "text_length": len(extracted_text),
+                "chunks_indexed": len(chunk_ids),
+                "message": (
+                    "Document uploaded, processed, "
+                    "and indexed successfully."
+                ),
+            }
+        )
 
     except Exception as error:
         try:
@@ -254,16 +334,22 @@ def upload_document():
             if db is not None:
                 db.rollback()
 
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+        return jsonify(
+            {
+                "success": False,
+                "error": str(error),
+            }
+        ), 500
 
     finally:
         if db is not None:
             db.close()
 
-@document_bp.route("/file/<path:filename>", methods=["GET"])
+
+@document_bp.route(
+    "/file/<path:filename>",
+    methods=["GET"],
+)
 def serve_document(filename):
     """Serve an uploaded document for preview/download."""
 
