@@ -12,13 +12,16 @@ class ContextBuilder:
 
         self.max_chunks = max_chunks
 
-    def build(self, retrieved_chunks):
-        """Build a context string from retrieved chunks."""
+    def build(self, retrieved_chunks, use_all=False):
+        """Build a context string from retrieved document chunks."""
 
         if not retrieved_chunks:
             return ""
 
-        chunks = retrieved_chunks[:self.max_chunks]
+        if use_all:
+            chunks = retrieved_chunks
+        else:
+            chunks = retrieved_chunks[:self.max_chunks]
 
         context_parts = []
 
@@ -42,10 +45,18 @@ class ContextBuilder:
 
         return "\n\n".join(context_parts)
 
-    def build_prompt(self, question, retrieved_chunks):
-        """Build a prompt containing the question and retrieved context."""
+    def build_prompt(
+        self,
+        question,
+        retrieved_chunks,
+        use_all=False,
+    ):
+        """Build a prompt containing the question and document context."""
 
-        context = self.build(retrieved_chunks)
+        context = self.build(
+            retrieved_chunks,
+            use_all=use_all,
+        )
 
         if not context:
             return question.strip()
@@ -66,6 +77,7 @@ Instructions:
 - If the context does not contain enough information, clearly say so.
 - Explain the answer clearly for a student.
 """
+
 
 
 context_builder = ContextBuilder()
