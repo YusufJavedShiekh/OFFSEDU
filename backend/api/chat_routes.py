@@ -198,6 +198,11 @@ def chat():
         # RAG remains available for normal document-grounded chats.
         #
         if image_base64:
+            print(
+                f"[VISION DEBUG] image received: "
+                f"{bool(image_base64)}, "
+                f"length: {len(image_base64) if image_base64 else 0}"
+            )
             response = chat_service.chat(
                 message,
                 history=previous_messages,

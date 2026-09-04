@@ -28,7 +28,14 @@ export const sendMessage = async (
   if (file) {
     formData.append("file", file);
   }
-
+  console.log("[CHAT SERVICE DEBUG] file argument:", file);
+  console.log("[CHAT SERVICE DEBUG] file name:", file?.name);
+  console.log("[CHAT SERVICE DEBUG] file type:", file?.type);
+  console.log("[CHAT SERVICE DEBUG] FormData file:", formData.get("file"));
+  console.log(
+    "[CHAT SERVICE DEBUG] FormData entries:",
+    [...formData.entries()]
+  );
   const response = await api.post("/chat/", formData);
 
   return response.data;

@@ -28,7 +28,14 @@ class OllamaClient:
 
         if images:
             payload["images"] = images
-
+        print(
+                "[OLLAMA VISION DEBUG] images:",
+                bool(images),
+                "image_count:",
+                len(images) if images else 0,
+                "image_length:",
+                len(images[0]) if images else 0,
+            )
         response = requests.post(
             f"{self.base_url}/api/generate",
             json=payload,
@@ -38,6 +45,7 @@ class OllamaClient:
         response.raise_for_status()
 
         data = response.json()
+        print("[OLLAMA RESPONSE DEBUG]", data.get("response", "")[:1000])
 
         return data.get("response", "")
 

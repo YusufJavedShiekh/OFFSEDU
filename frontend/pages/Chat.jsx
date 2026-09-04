@@ -175,15 +175,15 @@ function Chat() {
     if (!text || isTyping) {
       return;
     }
-
+    const fileToSend = attachedFile;
     const userMessage = {
       id: Date.now(),
       role: "user",
       text,
-      file: attachedFile
+      file: fileToSend
         ? {
-            name: attachedFile.name,
-            type: attachedFile.type,
+            name: fileToSend.name,
+            type: fileToSend.type,
           }
         : null,
     };
@@ -196,8 +196,8 @@ function Chat() {
     try {
       let documentId = null;
 
-      if (attachedFile && !attachedFile.type.startsWith("image/")) {
-        const uploadResult = await uploadDocument(attachedFile);
+      if (fileToSend && !fileToSend.type.startsWith("image/")) {
+        const uploadResult = await uploadDocument(fileToSend);
         documentId = uploadResult?.document_id || null;
 
         if (!documentId) {
@@ -210,7 +210,7 @@ function Chat() {
         sessionId,
         documentId,
         "English",
-        attachedFile,
+        fileToSend,
       );
 
       if (result?.session_id) {
