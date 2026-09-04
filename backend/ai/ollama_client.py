@@ -14,7 +14,7 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
-    def generate(self, prompt, system=None):
+    def generate(self, prompt, system=None, images=None):
         """Generate a response from the configured Ollama model."""
 
         payload = {
@@ -25,6 +25,9 @@ class OllamaClient:
 
         if system:
             payload["system"] = system
+
+        if images:
+            payload["images"] = images
 
         response = requests.post(
             f"{self.base_url}/api/generate",

@@ -3,14 +3,10 @@ from ai.prompts import SYSTEM_PROMPT
 
 
 class GemmaService:
-    """High-level service for interacting with Gemma."""
-
     def __init__(self, client=None):
         self.client = client or ollama_client
 
-    def generate(self, prompt, system_prompt=None):
-        """Generate a response using Gemma."""
-
+    def generate(self, prompt, system_prompt=None, images=None):
         if not prompt or not prompt.strip():
             raise ValueError("Prompt cannot be empty.")
 
@@ -19,11 +15,10 @@ class GemmaService:
         return self.client.generate(
             prompt=prompt,
             system=system,
+            images=images,
         )
 
     def is_available(self):
-        """Check whether Ollama is available."""
-
         return self.client.is_available()
 
 

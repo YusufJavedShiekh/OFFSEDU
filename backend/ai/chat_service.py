@@ -10,55 +10,57 @@ class ChatService:
     def __init__(self, ai_service=None):
         self.ai_service = ai_service or gemma_service
 
-    def chat(self, message, history=None):
-        """Send a student message to Gemma with recent conversation context."""
-
+    def chat(
+        self,
+        message,
+        history=None,
+        language="English",
+        intent="chat",
+        image=None,
+    ):
         if not message or not message.strip():
             raise ValueError("Message cannot be empty.")
 
-        history_text = self._build_history(history)
-
         prompt = CHAT_PROMPT.format(
             message=message.strip(),
-            history=history_text,
+            history=self._build_history(history),
+            language=language or "English",
+            intent=intent or "chat",
         )
 
-        return self.ai_service.generate(prompt)
+        return self.ai_service.generate(
+            prompt,
+            images=[image] if image else None,
+        )
 
     def _build_history(self, history):
-        """Build a bounded conversation history for the AI prompt."""
-
         if not history:
             return "No previous conversation."
 
-        recent_history = history[-self.MAX_HISTORY_MESSAGES:]
-
         lines = []
 
-        for item in recent_history:
+        for item in history[-self.MAX_HISTORY_MESSAGES:]:
             role = getattr(item, "role", None)
             content = getattr(item, "message", None)
 
             if isinstance(item, dict):
                 role = item.get("role")
-                content = item.get("message")
+                content = item.get("message") or item.get("text")
 
             if not role or not content:
                 continue
 
-            if role == "user":
-                role_name = "Student"
-            elif role == "assistant":
-                role_name = "OFFSEDU"
-            else:
-                role_name = str(role).capitalize()
+            role_name = (
+                "Student"
+                if role == "user"
+                else "OFFSEDU"
+                if role == "assistant"
+                else str(role).capitalize()
+            )
 
             lines.append(f"{role_name}: {content}")
 
-        if not lines:
-            return "No previous conversation."
-
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else "No previous conversation."
 
 
 chat_service = ChatService()

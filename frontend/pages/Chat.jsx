@@ -1,4 +1,10 @@
-import { sendMessage as sendChatMessage } from "../services/chatService";
+import {
+  deleteChatSession,
+  getChatMessages,
+  getChatSessions,
+  sendMessage as sendChatMessage,
+} from "../services/chatService";
+import { uploadDocument } from "../services/documentService";
 import {
   Bot,
   FileText,
@@ -12,7 +18,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const initialMessages = [
   {
@@ -46,9 +52,122 @@ function Chat() {
 
     return Number.isFinite(parsedSessionId) ? parsedSessionId : null;
   });
+  const [chatSessions, setChatSessions] = useState([]);
+  const [isRestoring, setIsRestoring] = useState(true);
 
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreChat = async () => {
+      try {
+        const result = await getChatSessions();
+
+        if (cancelled) return;
+
+        setChatSessions(
+          Array.isArray(result?.sessions) ? result.sessions : [],
+        );
+
+        if (!sessionId) {
+          setIsRestoring(false);
+          return;
+        }
+
+        const history = await getChatMessages(sessionId);
+
+        if (cancelled) return;
+
+        const savedMessages = Array.isArray(history?.messages)
+          ? history.messages.map((message) => ({
+              id: message.id,
+              role: message.role,
+              text: message.message || "",
+            }))
+          : [];
+
+        if (savedMessages.length > 0) {
+          setMessages(savedMessages);
+        } else {
+          setSessionId(null);
+          localStorage.removeItem("offsedu_chat_session_id");
+          setMessages(initialMessages);
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionId(null);
+          localStorage.removeItem("offsedu_chat_session_id");
+          setMessages(initialMessages);
+        }
+      } finally {
+        if (!cancelled) setIsRestoring(false);
+      }
+    };
+
+    restoreChat();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  const refreshChatSessions = async () => {
+    try {
+      const result = await getChatSessions();
+
+      if (Array.isArray(result?.sessions)) {
+        setChatSessions(result.sessions);
+      }
+    } catch {
+      // Keep the current UI if history refresh fails.
+    }
+  };
+
+  const openChatSession = async (id) => {
+    if (!id || id === sessionId || isTyping) return;
+
+    try {
+      setIsTyping(true);
+      const result = await getChatMessages(id);
+
+      const savedMessages = Array.isArray(result?.messages)
+        ? result.messages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            text: message.message || "",
+          }))
+        : [];
+
+      setSessionId(id);
+      localStorage.setItem("offsedu_chat_session_id", String(id));
+      setMessages(savedMessages.length ? savedMessages : initialMessages);
+      setAttachedFile(null);
+    } catch (error) {
+      console.error("Unable to open chat history:", error);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const removeChat = async (id) => {
+    if (!id) return;
+
+    try {
+      await deleteChatSession(id);
+
+      if (id === sessionId) {
+        setSessionId(null);
+        localStorage.removeItem("offsedu_chat_session_id");
+        setMessages(initialMessages);
+      }
+
+      await refreshChatSessions();
+    } catch (error) {
+      console.error("Unable to delete chat:", error);
+    }
+  };
 
   const sendMessage = async (messageText = input) => {
     const text = messageText.trim();
@@ -75,9 +194,23 @@ function Chat() {
     setIsTyping(true);
 
     try {
+      let documentId = null;
+
+      if (attachedFile && !attachedFile.type.startsWith("image/")) {
+        const uploadResult = await uploadDocument(attachedFile);
+        documentId = uploadResult?.document_id || null;
+
+        if (!documentId) {
+          throw new Error("Unable to process the attached document.");
+        }
+      }
+
       const result = await sendChatMessage(
         text,
         sessionId,
+        documentId,
+        "English",
+        attachedFile,
       );
 
       if (result?.session_id) {
@@ -86,6 +219,8 @@ function Chat() {
           "offsedu_chat_session_id",
           String(result.session_id),
         );
+
+        await refreshChatSessions();
       }
 
       const aiMessage = {
@@ -240,25 +375,54 @@ function Chat() {
           </button>
         </div>
 
-        {/* Conversation */}
+        {/* Conversations */}
         <div className="flex-1 overflow-y-auto px-3">
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.035] p-3">
-            <div className="flex items-start gap-2.5">
-              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-teal-300/15 bg-teal-400/[0.06]">
-                <Bot size={14} className="text-teal-300" />
-              </div>
-
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-medium text-slate-200">
-                  New study conversation
-                </p>
-
-                <p className="mt-1 text-[9px] text-slate-500">
-                  Just now
-                </p>
-              </div>
+          {chatSessions.length === 0 ? (
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+              <p className="text-[10px] leading-5 text-slate-500">
+                Your saved conversations will appear here.
+              </p>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              {chatSessions.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={`group rounded-xl border p-3 transition ${
+                    chat.id === sessionId
+                      ? "border-teal-300/15 bg-teal-400/[0.06]"
+                      : "border-white/[0.06] bg-white/[0.025] hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openChatSession(chat.id)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <p className="truncate text-[11px] font-medium text-slate-200">
+                        {chat.title || "New Chat"}
+                      </p>
+                      <p className="mt-1 text-[9px] text-slate-500">
+                        {chat.updated_at
+                          ? new Date(chat.updated_at).toLocaleString()
+                          : "Saved locally"}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => removeChat(chat.id)}
+                      title="Delete conversation"
+                      className="rounded-lg p-1.5 text-slate-600 opacity-0 transition hover:bg-red-400/[0.05] hover:text-red-300 group-hover:opacity-100"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Local Info */}
@@ -347,7 +511,7 @@ function Chat() {
         ====================================================== */}
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
-            {messages.length === 1 && (
+            {!isRestoring && messages.length === 1 && (
               <div className="mb-5 flex flex-col items-center justify-center py-8 text-center">
                 <div className="relative mb-5">
                   <div className="absolute -inset-5 rounded-full bg-teal-400/[0.06] blur-2xl" />
