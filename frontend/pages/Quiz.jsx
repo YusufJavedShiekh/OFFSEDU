@@ -15,68 +15,12 @@ import {
   Zap,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import { generateQuiz } from "../services/quizService";
+import { uploadDocument } from "../services/documentService";
 
 const languages = ["English", "Hindi", "Marathi", "Urdu"];
 const difficulties = ["Easy", "Medium", "Hard"];
 const questionCounts = [5, 10, 20, 30];
-
-const sampleQuestions = [
-  {
-    question: "What is the main purpose of a DBMS?",
-    options: [
-      "To create computer hardware",
-      "To manage and organize data",
-      "To design websites",
-      "To edit images",
-    ],
-    answer: 1,
-    explanation:
-      "A DBMS is used to store, organize, retrieve and manage data efficiently.",
-  },
-  {
-    question: "Which of the following is a database language?",
-    options: ["HTML", "CSS", "SQL", "XML"],
-    answer: 2,
-    explanation:
-      "SQL stands for Structured Query Language and is widely used to work with relational databases.",
-  },
-  {
-    question: "Which key uniquely identifies a record in a table?",
-    options: [
-      "Foreign Key",
-      "Primary Key",
-      "Candidate Key",
-      "Alternate Key",
-    ],
-    answer: 1,
-    explanation:
-      "A primary key uniquely identifies each record in a database table.",
-  },
-  {
-    question: "Which normal form removes repeating groups?",
-    options: [
-      "First Normal Form",
-      "Second Normal Form",
-      "Third Normal Form",
-      "BCNF",
-    ],
-    answer: 0,
-    explanation:
-      "First Normal Form requires atomic values and removes repeating groups.",
-  },
-  {
-    question: "What does SQL stand for?",
-    options: [
-      "Simple Query Language",
-      "Structured Query Language",
-      "System Query Logic",
-      "Structured Question Language",
-    ],
-    answer: 1,
-    explanation:
-      "SQL stands for Structured Query Language.",
-  },
-];
 
 function Quiz() {
   const [subject, setSubject] = useState("");
@@ -95,13 +39,10 @@ function Quiz() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [documentId, setDocumentId] = useState(null);
+  const [questions, setQuestions] = useState([]);
 
   const fileInputRef = useRef(null);
-
-  const questions = sampleQuestions.slice(
-    0,
-    Math.min(Number(questionCount), sampleQuestions.length),
-  );
 
   const handleFile = (selectedFile) => {
     if (!selectedFile) {
@@ -129,6 +70,7 @@ function Quiz() {
     }
 
     setFile(selectedFile);
+    setDocumentId(null);
     setStatusMessage("");
 
     if (!subject.trim()) {
@@ -154,14 +96,22 @@ function Quiz() {
 
   const removeFile = () => {
     setFile(null);
+    setDocumentId(null);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
-  const startQuiz = () => {
-    if (!subject.trim() && !topic.trim() && !file) {
+  const startQuiz = async () => {
+    const selectedTopic =
+      topic.trim() ||
+      subject.trim() ||
+      (file
+        ? file.name.replace(/\.[^/.]+$/, "")
+        : "");
+
+    if (!selectedTopic && !file) {
       setStatusMessage(
         "Please enter a subject/topic or upload study material first.",
       );
@@ -170,14 +120,74 @@ function Quiz() {
 
     setIsGenerating(true);
     setStatusMessage("");
+    setQuizStarted(false);
 
-    setTimeout(() => {
+    try {
+      let selectedDocumentId = documentId;
+
+      if (file && !selectedDocumentId) {
+        setStatusMessage(
+          "Uploading and processing your study material...",
+        );
+
+        const uploadResult = await uploadDocument(file);
+
+        if (
+          !uploadResult?.success ||
+          !uploadResult?.document_id
+        ) {
+          throw new Error(
+            uploadResult?.error ||
+              "Unable to process the study material.",
+          );
+        }
+
+        selectedDocumentId = uploadResult.document_id;
+        setDocumentId(selectedDocumentId);
+
+        setStatusMessage(
+          "Study material processed. Generating quiz...",
+        );
+      }
+
+      const data = await generateQuiz({
+        topic: selectedTopic,
+        numQuestions: questionCount,
+        documentId: selectedDocumentId,
+        difficulty,
+        language,
+      });
+
+      const generatedQuestions = Array.isArray(data?.questions)
+        ? data.questions
+        : Array.isArray(data)
+          ? data
+          : [];
+
+      if (!generatedQuestions.length) {
+        throw new Error(
+          "The AI did not return any quiz questions.",
+        );
+      }
+
+      setQuestions(generatedQuestions);
       setAnswers({});
       setCurrentQuestion(0);
       setQuizFinished(false);
       setQuizStarted(true);
+      setStatusMessage("");
+    } catch (error) {
+      console.error("Quiz generation error:", error);
+
+      setStatusMessage(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          "Unable to generate quiz. Please check the backend.",
+      );
+    } finally {
       setIsGenerating(false);
-    }, 900);
+    }
   };
 
   const selectAnswer = (answerIndex) => {
