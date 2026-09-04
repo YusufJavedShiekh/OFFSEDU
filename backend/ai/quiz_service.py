@@ -15,6 +15,8 @@ class QuizService:
         topic,
         num_questions=5,
         context=None,
+        difficulty="Medium",
+        language="English",
     ):
         """Generate a quiz using optional study material context."""
 
@@ -47,6 +49,8 @@ class QuizService:
             topic=topic.strip(),
             num_questions=num_questions,
             context=context_text,
+            difficulty=str(difficulty).strip() or "Medium",
+            language=str(language).strip() or "English",
         )
 
         response = self.ai_service.generate(prompt)
