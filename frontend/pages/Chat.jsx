@@ -35,6 +35,17 @@ function Chat() {
   const [isTyping, setIsTyping] = useState(false);
   const [attachedFile, setAttachedFile] = useState(null);
   const [showHistory, setShowHistory] = useState(true);
+  const [sessionId, setSessionId] = useState(() => {
+    const storedSessionId = localStorage.getItem("offsedu_chat_session_id");
+
+    if (!storedSessionId) {
+      return null;
+    }
+
+    const parsedSessionId = Number(storedSessionId);
+
+    return Number.isFinite(parsedSessionId) ? parsedSessionId : null;
+  });
 
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -64,7 +75,18 @@ function Chat() {
     setIsTyping(true);
 
     try {
-      const result = await sendChatMessage(text);
+      const result = await sendChatMessage(
+        text,
+        sessionId,
+      );
+
+      if (result?.session_id) {
+        setSessionId(result.session_id);
+        localStorage.setItem(
+          "offsedu_chat_session_id",
+          String(result.session_id),
+        );
+      }
 
       const aiMessage = {
         id: Date.now() + 1,
@@ -122,6 +144,16 @@ function Chat() {
     setMessages(initialMessages);
     setInput("");
     setAttachedFile(null);
+    setSessionId(null);
+    localStorage.removeItem("offsedu_chat_session_id");
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
   };
 
   const handleTextareaChange = (event) => {
