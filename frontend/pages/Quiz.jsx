@@ -106,10 +106,9 @@ function Quiz() {
   const startQuiz = async () => {
     const selectedTopic =
       topic.trim() ||
-      subject.trim() ||
       (file
-        ? file.name.replace(/\.[^/.]+$/, "")
-        : "");
+        ? "ALL"
+        : subject.trim());
 
     if (!selectedTopic && !file) {
       setStatusMessage(
