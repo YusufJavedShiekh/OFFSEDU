@@ -48,9 +48,9 @@ class QuizService:
         prompt = QUIZ_PROMPT.format(
             topic=topic.strip(),
             num_questions=num_questions,
-            context=context_text,
             difficulty=str(difficulty).strip() or "Medium",
             language=str(language).strip() or "English",
+            context=context_text,
         )
 
         response = self.ai_service.generate(prompt)

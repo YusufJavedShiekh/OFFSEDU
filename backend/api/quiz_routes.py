@@ -20,6 +20,8 @@ def generate_quiz():
     topic = str(data.get("topic", "")).strip()
     document_id = data.get("document_id")
     num_questions = data.get("num_questions", 5)
+    difficulty = str(data.get("difficulty", "Medium")).strip() or "Medium"
+    language = str(data.get("language", "English")).strip() or "English"
 
     if not topic:
         return jsonify({
@@ -68,7 +70,9 @@ def generate_quiz():
         quiz = quiz_service.generate_quiz(
             topic=topic,
             num_questions=num_questions,
-            context=context
+            context=context,
+            difficulty=difficulty,
+            language=language
         )
 
         return jsonify({
@@ -76,6 +80,8 @@ def generate_quiz():
             "topic": topic,
             "document_id": document_id,
             "num_questions": num_questions,
+            "difficulty": difficulty,
+            "language": language,
             "questions": quiz
         })
 

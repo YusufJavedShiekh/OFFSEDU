@@ -72,23 +72,45 @@ Topic:
 Number of questions:
 {num_questions}
 
+Difficulty:
+{difficulty}
+
+Language:
+{language}
+
 Study Material Context:
 {context}
 
 Requirements:
 1. When study material context is provided, use it as the primary source.
 2. Do not invent information that is not supported by the study material.
-3. If the topic is "ALL", create questions covering the important topics and concepts found in the provided study material.
+3. If the topic is "ALL", create questions covering important topics and concepts found in the provided study material.
 4. If a specific topic is requested, focus mainly on that topic using the study material.
 5. If the study material does not contain enough information for the requested topic, avoid pretending that it does.
 6. Questions should test understanding, not only memorization.
-7. Keep the difficulty appropriate for a B.Tech student.
-8. Provide four options for each question.
-9. Provide the correct answer.
-10. Provide a short explanation for the correct answer.
-11. Do not create ambiguous questions.
-12. Avoid duplicate questions.
-13. Return the quiz in a clear JSON format when possible.
+7. Follow the selected difficulty level.
+8. Generate the questions in the selected language.
+9. Provide four options for each question.
+10. Provide the correct answer.
+11. Provide a short explanation for the correct answer.
+12. Do not create ambiguous questions.
+13. Avoid duplicate questions.
+14. Return the quiz as valid JSON.
+
+JSON format:
+[
+  {
+    "question": "Question text",
+    "options": [
+      "Option 1",
+      "Option 2",
+      "Option 3",
+      "Option 4"
+    ],
+    "answer": 0,
+    "explanation": "Short explanation"
+  }
+]
 """
 
 STUDY_PLAN_PROMPT = """
