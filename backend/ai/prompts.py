@@ -72,15 +72,24 @@ Topic:
 Number of questions:
 {num_questions}
 
-Requirements:
-- Questions should test understanding, not only memorization.
-- Keep the difficulty appropriate for a student.
-- Provide four options for each question.
-- Provide the correct answer.
-- Provide a short explanation for the correct answer.
-- Do not create ambiguous questions.
-"""
+Study Material Context:
+{context}
 
+Requirements:
+1. When study material context is provided, use it as the primary source.
+2. Do not invent information that is not supported by the study material.
+3. If the topic is "ALL", create questions covering the important topics and concepts found in the provided study material.
+4. If a specific topic is requested, focus mainly on that topic using the study material.
+5. If the study material does not contain enough information for the requested topic, avoid pretending that it does.
+6. Questions should test understanding, not only memorization.
+7. Keep the difficulty appropriate for a B.Tech student.
+8. Provide four options for each question.
+9. Provide the correct answer.
+10. Provide a short explanation for the correct answer.
+11. Do not create ambiguous questions.
+12. Avoid duplicate questions.
+13. Return the quiz in a clear JSON format when possible.
+"""
 
 STUDY_PLAN_PROMPT = """
 Create a practical study plan for the following topic.

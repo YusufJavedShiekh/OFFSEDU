@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from ai.quiz_service import quiz_service
+from rag.rag_service import rag_service
 
 
 quiz_bp = Blueprint(
@@ -16,7 +17,8 @@ def generate_quiz():
 
     data = request.get_json(silent=True) or {}
 
-    topic = data.get("topic", "").strip()
+    topic = str(data.get("topic", "")).strip()
+    document_id = data.get("document_id")
     num_questions = data.get("num_questions", 5)
 
     if not topic:
@@ -40,14 +42,39 @@ def generate_quiz():
         }), 400
 
     try:
+        context = []
+
+        if document_id:
+            if topic.upper() == "ALL":
+                context = rag_service.get_document_chunks(
+                    document_id=document_id
+                )
+            else:
+                context = rag_service.search(
+                    query=topic,
+                    top_k=8,
+                    document_id=document_id
+                )
+
+            if not context:
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "No processed study material was found "
+                        "for this document."
+                    )
+                }), 400
+
         quiz = quiz_service.generate_quiz(
             topic=topic,
-            num_questions=num_questions
+            num_questions=num_questions,
+            context=context
         )
 
         return jsonify({
             "success": True,
             "topic": topic,
+            "document_id": document_id,
             "num_questions": num_questions,
             "questions": quiz
         })
