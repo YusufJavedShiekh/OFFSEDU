@@ -72,14 +72,19 @@ def list_chat_sessions():
         })
 
     except Exception as error:
+        import traceback
+
+        error_details = traceback.format_exc()
+
+        print("\n========== EXPLANATION PREP ERROR ==========")
+        print(error_details)
+        print("=============================================\n")
+
         return jsonify({
             "success": False,
-            "error": "Unable to load chat history.",
-            "details": str(error),
+            "error": str(error),
+            "details": error_details,
         }), 500
-
-    finally:
-        db.close()
 
 
 @chat_bp.route("/", methods=["POST"])

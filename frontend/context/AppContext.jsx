@@ -12,6 +12,7 @@ const AppContext = createContext(null);
 const STORAGE_KEYS = {
   LANGUAGE: "offsedu_language",
   THEME: "offsedu_theme",
+  EXPLAIN: "offsedu_explain_state",
 };
 
 export const LANGUAGES = {
@@ -42,6 +43,22 @@ export const THEMES = {
 const VALID_LANGUAGES = Object.values(LANGUAGES);
 const VALID_THEMES = Object.values(THEMES);
 
+const DEFAULT_EXPLAIN_STATE = {
+  subject: "",
+  topic: "",
+  language: LANGUAGES.ENGLISH,
+  level: "Simple",
+  file: null,
+  documentId: null,
+  explanation: "",
+  sections: [],
+  steps: [],
+  visuals: [],
+  keyPoints: [],
+  examPoints: [],
+  terms: [],
+};
+
 /**
  * Safely read a value from localStorage.
  */
@@ -54,6 +71,34 @@ const getStoredValue = (key, validValues, fallback) => {
       : fallback;
   } catch {
     return fallback;
+  }
+};
+
+/**
+ * Safely read Explain page state from localStorage.
+ */
+const getStoredExplainState = () => {
+  try {
+    const stored = localStorage.getItem(
+      STORAGE_KEYS.EXPLAIN
+    );
+
+    if (!stored) {
+      return DEFAULT_EXPLAIN_STATE;
+    }
+
+    const parsed = JSON.parse(stored);
+
+    if (!parsed || typeof parsed !== "object") {
+      return DEFAULT_EXPLAIN_STATE;
+    }
+
+    return {
+      ...DEFAULT_EXPLAIN_STATE,
+      ...parsed,
+    };
+  } catch {
+    return DEFAULT_EXPLAIN_STATE;
   }
 };
 
@@ -71,9 +116,11 @@ const applyTheme = (theme) => {
     theme === THEMES.DARK ||
     (theme === THEMES.SYSTEM &&
       typeof window !== "undefined" &&
-      window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches);
+      window
+        .matchMedia(
+          "(prefers-color-scheme: dark)"
+        )
+        .matches);
 
   root.classList.toggle(
     "dark",
@@ -112,6 +159,15 @@ export const AppProvider = ({ children }) => {
 
   const [error, setErrorState] =
     useState(null);
+
+  /**
+   * Persistent Explain page state.
+   *
+   * This allows Explain data to remain available
+   * when navigating between application pages.
+   */
+  const [explainState, setExplainState] =
+    useState(getStoredExplainState);
 
   /**
    * Apply theme whenever theme changes.
@@ -155,6 +211,20 @@ export const AppProvider = ({ children }) => {
   }, [theme]);
 
   /**
+   * Persist Explain page state.
+   */
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.EXPLAIN,
+        JSON.stringify(explainState)
+      );
+    } catch {
+      // Continue even if browser storage is unavailable.
+    }
+  }, [explainState]);
+
+  /**
    * Set active application page.
    */
   const setActivePage = useCallback(
@@ -165,10 +235,12 @@ export const AppProvider = ({ children }) => {
         setErrorState(
           `Invalid application page: ${page}`
         );
+
         return false;
       }
 
       setActivePageState(page);
+
       return true;
     },
     []
@@ -182,6 +254,7 @@ export const AppProvider = ({ children }) => {
       setErrorState(
         `Unsupported language: ${value}`
       );
+
       return false;
     }
 
@@ -207,6 +280,7 @@ export const AppProvider = ({ children }) => {
       setErrorState(
         `Unsupported theme: ${value}`
       );
+
       return false;
     }
 
@@ -256,6 +330,38 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   /**
+   * Update Explain page state.
+   */
+  const updateExplainState = useCallback(
+    (updates) => {
+      setExplainState((previous) => ({
+        ...previous,
+        ...(typeof updates === "function"
+          ? updates(previous)
+          : updates),
+      }));
+    },
+    []
+  );
+
+  /**
+   * Clear Explain page state.
+   */
+  const clearExplainState = useCallback(() => {
+    setExplainState({
+      ...DEFAULT_EXPLAIN_STATE,
+    });
+
+    try {
+      localStorage.removeItem(
+        STORAGE_KEYS.EXPLAIN
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  }, []);
+
+  /**
    * Reset global application state.
    */
   const resetApp = useCallback(() => {
@@ -264,6 +370,10 @@ export const AppProvider = ({ children }) => {
     setThemeState(THEMES.SYSTEM);
     setLoadingState(false);
     setErrorState(null);
+
+    setExplainState({
+      ...DEFAULT_EXPLAIN_STATE,
+    });
 
     try {
       localStorage.setItem(
@@ -274,6 +384,10 @@ export const AppProvider = ({ children }) => {
       localStorage.setItem(
         STORAGE_KEYS.THEME,
         THEMES.SYSTEM
+      );
+
+      localStorage.removeItem(
+        STORAGE_KEYS.EXPLAIN
       );
     } catch {
       // Ignore storage errors.
@@ -292,6 +406,9 @@ export const AppProvider = ({ children }) => {
       loading,
       error,
 
+      // Explain page state
+      explainState,
+
       // Constants
       languages: LANGUAGES,
       pages: APP_PAGES,
@@ -304,6 +421,12 @@ export const AppProvider = ({ children }) => {
       setLoading,
       setError,
       clearError,
+
+      // Explain actions
+      setExplainState,
+      updateExplainState,
+      clearExplainState,
+
       resetApp,
     }),
     [
@@ -312,12 +435,15 @@ export const AppProvider = ({ children }) => {
       theme,
       loading,
       error,
+      explainState,
       setActivePage,
       setLanguage,
       setTheme,
       setLoading,
       setError,
       clearError,
+      updateExplainState,
+      clearExplainState,
       resetApp,
     ]
   );

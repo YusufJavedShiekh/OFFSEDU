@@ -53,8 +53,6 @@ class Retriever:
         return self._format_results(results)
 
     def retrieve_all(self, document_id):
-        """Retrieve all chunks belonging to a document."""
-
         if not document_id:
             raise ValueError("Document ID is required.")
 
